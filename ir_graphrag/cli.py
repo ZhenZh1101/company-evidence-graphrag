@@ -21,6 +21,7 @@ def main():
             p.add_argument('--vector-size', type=int, default=1536)
         if command == 'prepare':
             p.add_argument('--dataset', type=Path, action='append', required=True)
+            p.add_argument('--profile', choices=['all', 'financial'], default='all')
             p.add_argument('--ticker')
             p.add_argument('--category', dest='categories', action='append', default=[])
             p.add_argument('--form', dest='forms', action='append', default=[])

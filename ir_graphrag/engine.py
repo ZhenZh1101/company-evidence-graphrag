@@ -47,7 +47,7 @@ def initialize(root: Path, *, model='openclaw/llm-gpt55', embedding_model='openc
                 m['type'] = 'ir_openclaw'
     config['input'] = dict(type='jsonl', file_pattern=r'.*\.jsonl$', id_column='id', title_column='title', text_column='text')
     config['chunking'] = dict(type='tokens', size=1000, overlap=100, encoding_model='cl100k_base',
-                              prepend_metadata=['id', 'title', 'ticker', 'publication_date', 'publication_period', 'category', 'form', 'report_date', 'locator'])
+                              prepend_metadata=['id', 'title', 'ticker', 'publication_date', 'publication_period', 'category', 'form', 'report_date', 'fiscal_year', 'fiscal_quarter', 'report_year', 'locator'])
     config['concurrent_requests'] = 2
     config['embed_text'].update(batch_size=8, batch_max_tokens=8000)
     config['vector_store']['vector_size'] = vector_size
