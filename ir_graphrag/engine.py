@@ -242,15 +242,22 @@ def merge_contexts(contexts: list[dict]) -> dict:
     return {table: list(rows.values()) for table, rows in merged.items()}
 
 
-def ask(root: Path, question: str, method='local', community_level=2) -> dict:
+def ask(root: Path, question: str, method='local', community_level=2, *, tickers=(), as_of=None,
+        forms=(), fiscal_year=None, fiscal_quarter=None) -> dict:
     import graphrag.api as api
     import pandas as pd
     root = root.expanduser().resolve()
-    if method not in {'local', 'global', 'basic', 'drift'}:
+    if method not in {'financial', 'local', 'global', 'basic', 'drift'}:
         raise ValueError('Unknown search method')
     if not question.strip():
         raise ValueError('Question must not be empty')
     with workspace_lock(root):
+        from .financial import answer as financial_answer, audit_citations
+        filters = dict(tickers=tickers, as_of=as_of, forms=forms, fiscal_year=fiscal_year, fiscal_quarter=fiscal_quarter)
+        if method == 'financial':
+            return financial_answer(root, question, **filters)
+        if any(filters.values()):
+            raise ValueError('Query-time company/date/fiscal filters require --method financial. For graph queries build a separately scoped workspace.')
         config = load_settings(root)
         stamp = root / 'index-ready.json'
         if not stamp.is_file():
@@ -284,7 +291,11 @@ def ask(root: Path, question: str, method='local', community_level=2) -> dict:
             context = merge_contexts([*contexts, context])
         evidence = resolve_evidence(context, {k: plain(v) for k, v in tables.items()},
                                     json.loads((root / 'manifest.json').read_text()))
+        audit = audit_citations(answer, context)
+        for item in evidence:
+            item['cited'] = any(reference in audit['references'] for reference in item['references'])
         result = dict(question=question, method=method, answer=answer, evidence=evidence, context=context,
+                      citation_audit=audit,
                       scope=json.loads((root / 'ingestion-report.json').read_text())['scope'],
                       evidence_note='Evidence lists retrieved text and graph background, not a claim that every item was cited. Match answer [Data: ...] IDs to references; community background is not direct verification.')
         return result
