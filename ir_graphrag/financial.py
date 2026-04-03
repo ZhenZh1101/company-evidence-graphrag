@@ -150,10 +150,12 @@ def search(root: Path, question: str, *, tickers=(), as_of=None, forms=(), fisca
             facets.append('"core net loss" OR "core net income"')
     if '"margin"' in match:
         facets.append('"operating margin"')
+    if '"share"' in match or '"eps"' in match:
+        facets.append('"loss per share" OR "earnings per share" OR "EPS"')
     path = ensure_catalog(root)
     with sqlite3.connect(path) as db:
         eligible = db.execute(f'SELECT COUNT(*) FROM documents d WHERE {clause}', parameters).fetchone()[0]
-        candidates, scores = {}, {}
+        candidates, scores, facet_members = {}, {}, {}
         for query in ([match, *facets] if match else []):
             ranked = db.execute(f'''SELECT p.id, p.document_id, p.part, p.text, d.metadata
                 FROM search JOIN passages p ON p.id=search.rowid JOIN documents d ON d.id=p.document_id
@@ -162,6 +164,8 @@ def search(root: Path, question: str, *, tickers=(), as_of=None, forms=(), fisca
             for rank, row in enumerate(ranked, 1):
                 candidates[row[0]] = row
                 scores[row[0]] = scores.get(row[0], 0) + 1 / (60 + rank)
+            if query in facets:
+                facet_members[query] = {row[0] for row in ranked}
         rows = [(*row, -scores[identifier]) for identifier, row in candidates.items()]
     metric_words = []
     for word in ('revenue', 'sales', 'income', 'loss', 'margin', 'EPS', 'cash', 'backlog', 'debt'):
@@ -176,7 +180,25 @@ def search(root: Path, question: str, *, tickers=(), as_of=None, forms=(), fisca
         return bool(re.search(pattern, text, re.I))
     def exact_table(row):
         return quantitative_row(row) and bool(re.search(r'\bin (?:thousands|millions|billions)\b', row[3], re.I))
-    rows.sort(key=lambda row: (not exact_table(row), not quantitative_row(row), row[5], row[0]))
+    year = re.search(r'\b20\d{2}\b', question)
+    quarter = re.search(r'\bq([1-4])\b', question, re.I)
+    if not quarter:
+        for number, chinese in enumerate('一二三四', 1):
+            if f'{chinese}季度' in question:
+                quarter = re.search(r'([1-4])', str(number))
+                break
+    def explicit_period(row):
+        if not year or not quarter:
+            return False
+        meta = json.loads(row[4])
+        if str(meta.get('fiscal_year')) == year[0] and str(meta.get('fiscal_quarter')) == quarter[1]:
+            return True
+        word = ['first', 'second', 'third', 'fourth'][int(quarter[1]) - 1]
+        return year[0] in meta.get('title', '') and bool(re.search(rf'\b(?:q{quarter[1]}|{word}[ -]quarter)\b', meta.get('title', ''), re.I))
+    rows.sort(key=lambda row: (not explicit_period(row), not exact_table(row), not quantitative_row(row), row[5], row[0]))
+    # Reserve one strong result per requested metric so EPS is not crowded out by net-loss tables.
+    reserved = [next((row for row in rows if row[0] in identifiers), None) for identifiers in facet_members.values()]
+    rows = [row for row in reserved if row is not None] + rows
     evidence, seen = [], set()
     for identifier, document, part, text, metadata, score in rows:
         # Do not spend a context window on the same body in multiple archive formats.

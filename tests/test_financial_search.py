@@ -39,6 +39,27 @@ class FinancialSearchTests(unittest.TestCase):
         self.assertEqual(audit_citations('Result [Data: Sources (12, 99); Reports (2)]', context)['invalid_references'], ['Sources:99', 'Reports:2'])
         self.assertEqual(audit_citations('No evidence', context)['status'], 'no_citations')
 
+    def test_multiple_metrics_and_explicit_quarter_are_not_crowded_out(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'input').mkdir()
+            rows, manifest = [], {}
+            for i in range(20):
+                text = 'USD in thousands. Net loss (14,006). Core net loss (2,480).'
+                title = 'First Quarter 2026 Results'
+                if i == 18:
+                    text = 'USD per share. Net loss per share (0.22).'
+                if i == 19:
+                    title = 'Second Quarter 2026 Results'
+                    text = 'USD per share. Net loss per share (0.77).'
+                rows.append(dict(id=str(i), text=text))
+                manifest[str(i)] = dict(ticker='OTHER', title=title, publication_date='2026-06-23', category='ir_news')
+            (root / 'manifest.json').write_text(json.dumps(manifest))
+            (root / 'input/documents.jsonl').write_text('\n'.join(json.dumps(row) for row in rows))
+            evidence = search(root, 'Example Systems 2026 Q1 净亏损、每股亏损及 Core 净亏损', tickers=['OTHER'], limit=3)['evidence']
+            self.assertIn('18', [source['document_id'] for source in evidence])
+            self.assertNotIn('19', [source['document_id'] for source in evidence[:2]])
+
     def test_long_passage_keeps_table_opening(self):
         text = 'Three Months Ended June 30, 2026 and 2025. USD in millions.\n' + '\n'.join(f'Financial item {i} | 1,200 | (300)' for i in range(500))
         chunks = list(passages(text))
