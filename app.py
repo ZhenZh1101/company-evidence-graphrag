@@ -70,11 +70,11 @@ report = json.loads(report_file.read_text()) if report_file.is_file() else {}
 ready = root / 'index-ready.json'
 counts = json.loads(ready.read_text())['counts'] if ready.is_file() else {}
 cols = st.columns(4)
-cols[0].metric('已导入片段（页 / 正文）', report.get('segments', 0))
-cols[1].metric('知识实体', counts.get('entities', '待建图'))
-cols[2].metric('实体关系', counts.get('relationships', '待建图'))
+cols[0].metric('已导入披露记录', report.get('records_selected', 0))
+cols[1].metric('正文 / 表格 / 页面片段', report.get('segments', 0))
+cols[2].metric('图谱实体 / 关系', f"{counts['entities']} / {counts['relationships']}" if counts else '未建立')
 cols[3].metric('需核查的导入记录', len(report.get('issues', [])))
-with st.expander('资料范围与导入质量', expanded=not ready.is_file()):
+with st.expander('资料范围与导入质量', expanded=not report.get('segments')):
     st.json(report.get('scope', {}))
     st.write('公司：', report.get('companies', {}))
     st.write('类别：', report.get('categories', {}))

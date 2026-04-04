@@ -1,114 +1,177 @@
 # 上市公司 GraphRAG
 
-基于 [Microsoft GraphRAG](https://github.com/microsoft/graphrag/tree/v3.2.0) **3.2.0** 的本地文档研究系统。直接调用上游 `build_index` / `local_search` / `global_search` / `basic_search` / `drift_search`，生成实体关系、社区报告、LanceDB 向量和原文引用。
+基于 [Microsoft GraphRAG 3.2.0](https://github.com/microsoft/graphrag/tree/v3.2.0) 的本地金融文档研究系统。提供财务原文检索、可追溯回答、原文数值核算，以及实体关系、社区主题分析。
 
-当前默认接入用户指定的 OpenClaw：
+财务数字优先从原文取证：**季度与年初至今、GAAP 与 Core/调整后、实际与指引、公告日与财务期间分别处理**。原文模式使用 SQLite FTS5 检索，交由上游 GraphRAG `BasicSearch` 生成回答；图谱模式调用上游建图、local/global/DRIFT API。原文模式不要求先完成昂贵的全量图谱，也不声称自己使用了图谱推理。
 
-- Chat：`http://127.0.0.1:18789/v1/chat/completions`
-- Embedding：`http://127.0.0.1:18789/v1/embeddings`
-- 两者模型名：`openclaw/llm-gpt55`
-- Embedding 维度：**1536**，通过真实接口探测确认；更换模型需重新探测并重建索引。
-- 运行时读取 `~/.openclaw/openclaw.json` 的 `gateway.auth.token`。也可在资料库 `.env` 设置 `GRAPHRAG_API_KEY` 或 `OPENCLAW_CONFIG`。不复制、不提交网关密钥。
+## 直接使用
 
-## 启动界面
-
-安装依赖后，在项目根目录运行：
+安装依赖后，在项目根目录启动界面：
 
 ```bash
 .venv/bin/streamlit run app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
 
-打开 <http://127.0.0.1:8501>。选择资料库，查看导入范围；已建图的资料库可直接提问，未建图的资料库可点击“建立 GraphRAG 索引”。侧栏支持输入一个或多个本地文档目录建立新资料库。
+打开 <http://127.0.0.1:8501>，选择已有资料库，或在侧栏指定自己的本地数据目录建立新资料库。界面支持公司与截止日期筛选、明确财年/财季筛选、实际引用证据查看，以及带原文操作数的 Decimal 核算。
 
-资料库状态以各自的 `ingestion-report.json` 和 `index-ready.json` 为准：**已导入文本不代表已完成图谱索引**。
+需要新版导入行为时新建资料库，避免覆盖已有索引。资料库 `ingestion-report.json` 记录实际范围与提取问题；已导入文本不代表已完成图谱索引。
 
-## 安装与命令行
+## 模型与安装
 
-需要 Python 3.11–3.13。系统 Python 3.9 不适用。
+默认接入用户指定的 OpenClaw：
+
+- Chat：`http://127.0.0.1:18789/v1/chat/completions`
+- Embedding：`http://127.0.0.1:18789/v1/embeddings`
+- 两者模型名：`openclaw/llm-gpt55`
+- Embedding：真实探测为 **1536 维**。
+- 运行时读取 `~/.openclaw/openclaw.json` 的 `gateway.auth.token`，也可在资料库 `.env` 设置 `GRAPHRAG_API_KEY` 或 `OPENCLAW_CONFIG`；不提交真实密钥。
+
+需要 Python 3.11–3.13。当前验证环境为 Python 3.12.14。
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 ```
 
-若只安装直接依赖且允许重新解析传递依赖，可用 `.venv/bin/python -m pip install -e .`。锁文件包含此次实际验证的版本。
+只安装直接依赖并允许重新解析传递版本，可用 `.venv/bin/python -m pip install -e .`。更换兼容 API：`init --api-base ... --model ... --embedding-model ... --vector-size ...`，在新资料库 `.env` 设置该服务的密钥，再运行 `doctor`。
 
-新建财务资料库前，将 `WORKSPACE` 设为资料库路径、`DATASET` 设为本地数据目录、`TICKER` 设为公司代码、`PERIOD` 设为需要查询的财务期间。命令不修改原始数据：
+## 财务原文问答
+
+以下命令使用调用者设置的环境变量：`WORKSPACE` 为已有资料库路径，`TICKER` 为公司代码，`PERIOD` 为问题中的财务期间，`AS_OF` 为发布日期截止日（`YYYY-MM-DD`）。需要严格财年/财季筛选时，设置 `FISCAL_YEAR` 与 `FISCAL_QUARTER`：
+
+```bash
+.venv/bin/ir-graphrag ask --root "$WORKSPACE" \
+  "${TICKER} ${PERIOD} 销售额和上年同期各是多少？请区分季度与累计数并注明来源。" \
+  --ticker "$TICKER" --as-of "$AS_OF" --fiscal-year "$FISCAL_YEAR" --fiscal-quarter "$FISCAL_QUARTER" \
+  --output "$WORKSPACE/answers/answer.json"
+```
+
+CLI 默认 `--method financial`。首次查询自动建立本地全文索引，**建立此索引不调用模型**；生成回答会调用 Chat。只查证据、不调用模型：
+
+```bash
+.venv/bin/ir-graphrag search --root "$WORKSPACE" \
+  "${TICKER} ${PERIOD} GAAP 与调整后收入" --ticker "$TICKER" --as-of "$AS_OF" \
+  --output "$WORKSPACE/answers/evidence.json"
+```
+
+原文检索采用显式中英财务词扩展、BM25 和指标短语检索，以 reciprocal-rank fusion 合并结果，优先精确金额表；同问多个指标时为各指标保留候选。长段落携带临近印刷表头，帮助保留金额单位与期间。该方法不是完整的语义检索器；罕见同义词未命中时可以改写指标名称，关系问题使用已建图资料库。
+
+**筛选边界：**
+
+- 查询 `--ticker` 可重复；`--as-of` 是资料**发布日期截止日**，未知发布日期会排除。日期输入被标准化后比较，截止日之后的资料不进入模型上下文。
+- `--fiscal-year` / `--fiscal-quarter` 只匹配归档明确提供的字段，**不从公告日推断财季**。大量 SEC/新闻记录缺这两个字段；不确定时不要启用这两个过滤器，在问题里写明财务期间，让回答引用原文表头。
+- `--form` 可重复，按归档表单字段匹配。
+- 未命中只表示当前筛选与关键词下没有匹配证据，不等于公司没有发布该期间的资料。
+- 图谱 local/global/basic/DRIFT 不接受上述查询时过滤，防止用全量社区摘要冒充严格时间隔离。图谱查询需要在导入时确定范围。
+
+## 导入新的金融资料库
+
+将 `WORKSPACE` 设为新资料库路径、`DATASET` 设为本地数据目录、`TICKER` 设为公司代码：
 
 ```bash
 .venv/bin/ir-graphrag init --root "$WORKSPACE"
-.venv/bin/ir-graphrag prepare --root "$WORKSPACE" \
-  --dataset "$DATASET" --ticker "$TICKER" \
-  --category quarterly_results --category annual_report
+.venv/bin/ir-graphrag prepare --root "$WORKSPACE" --profile financial \
+  --dataset "$DATASET" --ticker "$TICKER"
 .venv/bin/ir-graphrag doctor --root "$WORKSPACE"
-.venv/bin/ir-graphrag index --root "$WORKSPACE"
-.venv/bin/ir-graphrag ask --root "$WORKSPACE" \
-  "${TICKER} ${PERIOD} 营收是多少？同比变化如何？请注明单位、期间、计算依据和来源。" \
-  --method basic --output "$WORKSPACE/answers/revenue.json"
 ```
 
-全量语料包含大量技术论文、官网资料和申报文件；图谱提取需要多轮模型调用，可能运行很久。先通过 `status` 查看语料规模，再决定范围。报告中的 token 数只是字符数除以 4，**不是计费估算**；上游对自定义模型记录的零美元成本不表示免费。
+合并不同公司归档时可重复 `--dataset`，让公司代码从各归档元数据读取，不对混合资料统一指定 `--ticker`。
 
-跨公司比较：将 `COMPARISON_WORKSPACE` 设为另一个新资料库路径，`OTHER_DATASET` 设为另一家公司数据目录；在 `prepare` 中重复 `--dataset`。公司代码从各目录归档元数据读取，实体与每个文本块保留公司信息。日期变量 `SINCE` 与 `UNTIL` 使用 `YYYY-MM-DD` 格式：
+`financial` 范围选择定期/相关财务申报、业绩材料、电话会、年报、投资者会议和财务发布稿，排除所有权表单、普通产品博客和论文。`prepare` 默认仍为 `--profile all` 以兼容旧命令；界面默认选择 financial。
+
+进一步收窄：
+
+- `--category quarterly_results --category annual_report`，或 `--category sec_filings --form 10-K --form 10-Q`；与 financial 范围取交集。
+- `--since "$SINCE" --until "$UNTIL"` 按调用者设置的日期（`YYYY-MM-DD`）筛选，含起止日；未知日期默认排除，`--include-undated` 可保留。不设日期范围时保留无日期补充记录。
+- `--limit-records N` 按归档清单顺序限制整个任务的记录总数，可用于试跑。
+- 普通文档目录也可导入，使用 `--ticker` 明确公司。没有归档元数据时不猜测发布日期或财季；financial 范围对普通文件依赖文件名，名称不规范时用 `--profile all`。
+
+新增导入行为：保留 `fiscal_year`、`fiscal_quarter`、`report_year` 和 `report_date`；HTML 表格独立定位为 `table N`，保留跨度表头、行标签、币种及会计负数；发现 `[Truncated]` 的 HTML 时优先使用同目录完整 TXT，并记录回退。
+
+## 原文数值核算
+
+问答中的自动算术仍是模型输出。需要程序核算时，从已保存回答或 `search` 结果选择两个明确引用的数值，使用界面核算器或 CLI。将 `ANSWER_JSON` 设为自己的答案/检索结果路径、`OPERANDS_JSON` 设为外部操作数 JSON 路径：
 
 ```bash
-.venv/bin/ir-graphrag init --root "$COMPARISON_WORKSPACE"
-.venv/bin/ir-graphrag prepare --root "$COMPARISON_WORKSPACE" \
-  --dataset "$DATASET" \
-  --dataset "$OTHER_DATASET" \
-  --category sec_filings --form 10-K --form 10-Q --form S-1 --form S-1/A \
-  --since "$SINCE" --until "$UNTIL"
+.venv/bin/ir-graphrag calculate \
+  --answer "$ANSWER_JSON" \
+  --operands "$OPERANDS_JSON" \
+  --output "$WORKSPACE/answers/comparison.json"
 ```
 
-筛选说明：
+外部操作数 JSON 包含 `current` 与 `previous` 对象，两者都需要以下字段。下面仅说明结构；占位内容必须替换为当前答案中的真实来源编号、完整原文及相应数值标签：
 
-- `--category`、`--form` 可重复；表单类型按归档的 `form` 字段精确匹配。
-- `--since`、`--until` 按**发布日期**筛选，含起止日，不代替财务报告期。
-- 启用日期筛选时，未知日期、只有季度或年份的记录默认排除；`--include-undated` 可保留，但不会把它们称为期间内发布。
-- 未指定日期范围时保留无日期补充材料。`--limit-records N` 按清单顺序限制整个导入任务的归档记录总数，适合试跑。
-- 普通目录也可导入；没有归档元数据时，用 `--ticker` 明确公司，发布日期标为未知。混合公司目录应拆开准备元数据，而不是给全部文件猜测发行人。
-- 时间/公司范围在**建立图谱前**确定；不能对全量社区摘要做事后过滤并声称严格时间隔离。需要另一个范围时，新建资料库。
+```json
+{
+  "source_id": "答案中的来源编号",
+  "quote": "包含数值的完整原文行",
+  "value": "原文中的完整带符号数字",
+  "unit": "USD millions",
+  "period": "原文对应的财务期间",
+  "basis": "GAAP",
+  "metric": "原文对应的指标"
+}
+```
 
-## 如何选择问答方式
+核算器验证引用实际存在、数值是原文中的完整带符号 token；不能截取数值中的部分数字，也不能裁掉括号或负号把负数变成正数。用 Decimal 归一化 USD、千/百万/十亿美元；每股金额和百分率不能与金额混算。两期指标与会计口径标签必须一致，期间必须不同。
 
-| 方式 | 适用问题 | 证据 |
+返回差额、变化率；百分率相减另外返回百分点和基点。前期为零或负数时不给出易误导的增长率。
+
+**单位、指标、期间和 GAAP 口径由使用者明确指定；程序校验数字与算术，不自动证明这些语义标签正确。** 当前核算器限定 USD、USD per share、percent。
+
+## 图谱分析
+
+```bash
+.venv/bin/ir-graphrag index --root "$WORKSPACE"
+.venv/bin/ir-graphrag ask --root "$WORKSPACE" \
+  '主要客户、产品与业务风险之间有什么关系？' --method local
+```
+
+| 方法 | 适用问题 | 前提 |
 |---|---|---|
-| `local`（默认） | 客户、供应商、产品、组织、业务风险及其关系 | 实体、关系、相关原文和社区摘要 |
-| `global` | 跨文档主题、业务变化、整体风险 | 社区报告，经 map-reduce 汇总 |
-| `basic` | 具体金额、日期、披露内容；与图谱模式比较 | 原文向量检索 |
-| `drift` | 需要进一步探索的复杂问题 | 社区信息与多步局部检索 |
+| `financial`（CLI/界面默认） | 精确披露、金额、期间与会计口径 | 已导入文本 |
+| `local` | 公司、客户、产品、风险及关系 | 完成图谱 |
+| `global` | 跨文档主题与整体趋势 | 完成图谱，社区报告 map-reduce |
+| `basic` | 上游向量原文检索，与金融检索比较 | 完成现有索引及向量 |
+| `drift` | 复杂问题的多步探索 | 完成图谱，可能产生较多模型调用 |
 
-模式由用户显式选择，不通过脆弱的关键词规则自动猜测。中文问题可以检索英文资料，回答要求沿用问题语言。
+全量建图可能运行很久；先选财务范围或小样本。导入报告的 token 数只是字符数除以 4，不是计费估算。上游自定义模型成本记录为零不代表免费。
 
-回答 JSON 含 `answer`、`context`、`evidence`、`scope`。`[Data: Sources (7)]` 对应证据中的 `Sources:7`；实体、关系及社区编号也可追溯。原文证据保留网页 URL、本地文件、PDF 页码/幻灯片/工作表和文字片段。证据列表是检索结果，**不等于每项都被模型引用**；`graph_background` 表示图谱背景，不能当作某个数字的直接证明。
+## 引用、质量和运行边界
 
-提示词要求：不凭模型常识补足证据；区分发行人和交易对手，区分实际数与指引，保留币种、单位、财务期间与 GAAP 口径，说明矛盾与信息不足。财务计算仍由模型生成，不是确定性会计计算引擎；关键数值需要对照原文。
+- 回答 JSON 保留 `answer`、`evidence`、`context`、范围以及 `citation_audit`。`Sources:123` 对应 `[Data: Sources (123)]`。界面可只显示实际引用的证据，并查看原始路径、PDF 页码/表格位置、网页 URL 和片段。
+- 引用审计只核对编号是否存在，不是结论正确性判定。financial 模式拒绝接受含未知引用编号的模型回答；无引用会单独显示。图谱背景 `graph_background` 不能当作具体金额的直接证明。
+- financial 的本地检索索引随语料或元数据变化自动重建。图谱模式在语料/配置/提示词变化后拒绝使用过期索引；修正后重跑 `index` 可复用上游缓存。
+- 支持 PDF、HTML/HTM、TXT/Markdown、DOCX、PPTX、XLSX/XLS、CSV、XML。按归档清单选择正文及附件，排除审计文件、SEC 索引页和重复格式；重复文本保留公司、日期与期间的区别及别名。
+- 无 OCR、图形图表理解、音视频下载或自动转录；复杂表格、图形标签、扫描页仍可能不完整。Excel 读取缓存值，不计算公式；DOCX/PPTX 不解析嵌入图表和备注。旧 `.doc`/`.ppt` 需先转换。
+- 本机单用户工具，默认只监听 `127.0.0.1`；没有公网认证、多租户或任务队列。每个资料库同时只执行一个索引/查询。
+- OpenClaw 实测会改变 `<|>` 标记；通过上游 completion factory 注册的 `ir_openclaw` 仅对图抽取使用 ASCII 传输转义，随后恢复原生格式。请用本项目 CLI 完成 provider 注册。
 
-## 导入行为与边界
-
-- 支持 PDF、HTML/HTM、TXT/Markdown、DOCX、PPTX、XLSX/XLS、CSV 和 XML。JSON 归档清单用作元数据，不把审计 JSON/脚本当正文。
-- 优先使用归档 `index.json` 和每条 `meta.json`；SEC 优先原始正文及 exhibits，跳过索引页、重复格式、XBRL 辅助表；普通网页选一个正文版本，并读取附件。
-- HTML 表格保留行列分隔；PDF 按页提取排版文本，失败时回退到普通文本提取；Office 按正文/幻灯片/工作表定位。
-- 按内容去重并记录别名，保留不同公司和发布日期下的相同文本。二进制内容相同的附件在单次导入中复用提取结果。
-- 不提供 OCR、图像图表理解或自动下载音视频。部分扫描 PDF 无文字，图形标签、复杂跨页表格和排版可能缺失。`ingestion-report.json` 记录空页、提取失败、PDF 回退、无正文记录以及视频仅有链接等情况；它不是文档完整性保证。
-- Excel 使用缓存单元格值，不计算公式。DOCX/PPTX 不解析嵌入图表和备注。旧版 `.doc`/`.ppt`、压缩包和图片未处理，需先转换。
-- 目前为本机单用户工具；没有公网认证、多租户或后台任务队列。界面默认只监听 `127.0.0.1`。每个资料库同时只运行一个索引/查询操作。
-- `prepare` 不覆盖已有语料。索引失败不会产生可用标记；修正后重跑 `index` 可复用上游缓存。更改语料、配置或提示词后，问答会拒绝使用过期索引。
-
-## 网关适配
-
-实测该 OpenClaw 网关会改变模型响应中的 `<|>` 等尖括号标记；GraphRAG 原生提取器因此无法解析实体。`ir_graphrag/openclaw.py` 通过官方 completion factory 注册 `ir_openclaw`：仅将标记过的图谱抽取请求改用 `|||` 与 `END_OF_GRAPH`，返回后恢复上游格式。其他请求（包括流式问答）原样传递，GraphRAG 的图提取、聚类、社区报告及查询代码保持上游版本。
-
-更换其他兼容 API 时，`init --api-base ... --model ... --embedding-model ... --vector-size ...`，并在新资料库 `.env` 设置该服务的密钥。此时默认使用普通 LiteLLM provider。不要直接运行上游 CLI 来加载 `ir_openclaw` 类型：请使用本项目 `ir-graphrag` 命令完成注册。
-
-## 验证
+## 验证与开发
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/ir-graphrag doctor --root "$WORKSPACE"
 .venv/bin/ir-graphrag status --root "$WORKSPACE"
 ```
 
-测试覆盖：日期范围、未知日期、公司隔离、去重别名、路径越界、SEC 正文选择、表格数字、空语料失败、配置与密钥处理、索引过期检测、引用映射及网关格式适配。导入、索引及问答的检查方法见 `VALIDATION.md`。
+评估案例由调用者提供，不内置公司、财务数值、截止日或答案路径。将 `CASES` 设为外部案例 JSON 文件路径；文件内容为非空数组，每项包含：
 
-上游参考：[查询方式](https://microsoft.github.io/graphrag/query/overview/)、[初始化与索引](https://microsoft.github.io/graphrag/get_started/)。实现以固定版本源码为准；上游在线文档的部分配置示例可能来自其他版本。
+- `name`：唯一答案文件名，不含扩展名，仅使用字母、数字、`_`、`-`。
+- `question`：非空问题字符串。
+- `filters`：查询范围对象；可包含 `tickers` / `forms` 字符串数组、`as_of`（`YYYY-MM-DD`）、`fiscal_year`、`fiscal_quarter`。只填写原始资料能够支持的范围。
+- `expected`：预期数值的十进制字符串数组。
+- `units`：要核对的单位标签数组，支持 `million`、`thousand`、`per_share`。
+
+`expected` 与 `units` 都为空时，检查该范围下是否明确回答证据不足。预期值应由人对照原始披露填写。离线模式读取资料库 `answers/<name>.json`；实时模式调用模型并保存回答。
+
+```bash
+# 离线复核已有答案，不调用模型：
+.venv/bin/python scripts/evaluate_financial.py --root "$WORKSPACE" --cases "$CASES"
+# 用当前检索器和模型重新回答并检查：
+.venv/bin/python scripts/evaluate_financial.py --root "$WORKSPACE" --cases "$CASES" \
+  --live --output "$WORKSPACE/evaluation.json"
+```
+
+评估核对配置中的数值及负号、单位标签、查询范围、引用编号、被引用直接证据内的数值和本地源文件存在性。**这是指定案例的功能检查，不是整个语料库的语义财务准确率评测。** 数值出现在证据里也不能自动证明模型选对了行列或会计口径。
+
+导入、问答、引用与核算的检查方法见 `VALIDATION.md`。
