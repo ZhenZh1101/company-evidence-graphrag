@@ -9,7 +9,7 @@ _NUMBER = r"(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?|\.[0-9]+"
 _AMOUNT = re.compile(rf"(?P<prefix>[+-]?\$?|\$[+-]?)(?P<number>{_NUMBER})")
 _PREFIX = r"(?:(?:[+\-−]\s*)?[$€£¥]?\s*|[$€£¥]\s*[+\-−]\s*)"
 _TOKEN = re.compile(
-    rf"(?<![\w.,+\-−$€£¥(])(?:\(\s*{_PREFIX}(?:{_NUMBER})\s*\)|{_PREFIX}(?:{_NUMBER}))"
+    rf"(?<![\w.,+\-−$€£¥(])(?:(?:[$€£¥]\s*)?\(\s*{_PREFIX}(?:{_NUMBER})\s*\)|{_PREFIX}(?:{_NUMBER}))"
     r"(?!\w|[.,][0-9])"
 )
 _UNITS = {
@@ -26,6 +26,8 @@ def _amount(value: str) -> tuple[Decimal, str]:
     if re.search(r'[0-9.,]\s+[0-9.,]', value):
         raise ValueError(f'Invalid financial amount: {value!r}')
     text = re.sub(r'\s+', '', value).replace('−', '-')
+    if text.startswith('$('):
+        text = '($' + text[2:]
     accounting = text.startswith('(') and text.endswith(')')
     if accounting:
         text = text[1:-1]

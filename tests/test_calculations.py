@@ -53,6 +53,19 @@ class FinancialCalculationTests(unittest.TestCase):
         self.assertEqual(result['difference'], '-3.7')
         self.assertEqual(result['difference_basis_points'], '-370')
 
+    def test_currency_before_accounting_parentheses(self):
+        for literal in ('$(6,908)', '$ (6,908)'):
+            with self.subTest(literal=literal):
+                current, previous, evidence = comparison(literal, '$(14,006)', 'USD thousands')
+                result = calculate_change(current, previous, evidence)
+                self.assertEqual(result['current']['normalized_value'], '-6908000')
+                self.assertEqual(result['difference'], '7098000')
+                self.assertIsNone(result['growth_percent'])
+                for cropped in ('6,908', '(6,908)'):
+                    current.update(quote=cropped, value=cropped)
+                    with self.assertRaises(ValueError):
+                        calculate_change(current, previous, evidence)
+
     def test_cropped_quotes_cannot_change_original_numeric_tokens(self):
         excerpt = 'Revenue 10,876 99,512. Net loss (14,006), EPS (0.22). Cash $25; debt − 30.'
         evidence = [dict(source_id='7', excerpt=excerpt)]
