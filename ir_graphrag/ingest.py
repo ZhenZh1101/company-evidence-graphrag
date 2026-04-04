@@ -255,9 +255,8 @@ def prepare(root: Path, datasets: list[Path], *, ticker=None, categories=(), for
     root = root.expanduser().resolve()
     if profile not in {'all', 'financial'}:
         raise ValueError('profile must be all or financial')
-    for value in (since, until):
-        if value:
-            date.fromisoformat(value)
+    since = date.fromisoformat(since).isoformat() if since else None
+    until = date.fromisoformat(until).isoformat() if until else None
     if since and until and since > until:
         raise ValueError('--since must be no later than --until')
     if limit_records is not None and limit_records < 1:

@@ -50,6 +50,10 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(len(doc['aliases']), 1)
             self.assertTrue(Path(doc['source_path']).is_file())
             self.assertEqual(doc['publication_date'], '2025-01-01')
+            for i, cutoff in enumerate(('20250101', '2025-W01-3')):
+                scoped = prepare(base / f'cutoff-{i}', [data], until=cutoff)
+                self.assertEqual(scoped['records_selected'], 2)
+                self.assertEqual(scoped['scope']['until'], '2025-01-01')
             with self.assertRaises(ValueError):
                 prepare(root, [data])
             write_json(data / 'index.json', [dict(folder='../escape', title='escape', category='x')])

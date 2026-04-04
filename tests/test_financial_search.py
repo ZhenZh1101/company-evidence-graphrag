@@ -25,7 +25,8 @@ class FinancialSearchTests(unittest.TestCase):
             self.assertEqual(result['eligible_documents'], 1)
             self.assertEqual([s['document_id'] for s in result['evidence']], ['0'])
             self.assertEqual(search(root, '销售额', as_of='2020-01-01')['evidence'], [])
-            self.assertEqual(search(root, '销售额', as_of='20260101')['eligible_documents'], 1)
+            for cutoff in ('20260101', '2026-W01-1'):
+                self.assertEqual(search(root, '销售额', as_of=cutoff)['eligible_documents'], 1)
             # Preserve fiscal period separate from publication year and invalidate on metadata edits.
             manifest['0']['fiscal_year'] = 2025
             (root / 'manifest.json').write_text(json.dumps(manifest))
@@ -59,6 +60,17 @@ class FinancialSearchTests(unittest.TestCase):
             evidence = search(root, 'Example Systems 2026 Q1 净亏损、每股亏损及 Core 净亏损', tickers=['OTHER'], limit=3)['evidence']
             self.assertIn('18', [source['document_id'] for source in evidence])
             self.assertNotIn('19', [source['document_id'] for source in evidence[:2]])
+
+    def test_equal_text_preserves_different_issuers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'input').mkdir()
+            manifest = {ticker: dict(ticker=ticker, title='Quarterly results', publication_date='2026-07-01')
+                        for ticker in ('AAA', 'BBB')}
+            (root / 'manifest.json').write_text(json.dumps(manifest))
+            (root / 'input/documents.jsonl').write_text('\n'.join(json.dumps(dict(id=t, text='Revenue $100 million.')) for t in manifest))
+            evidence = search(root, '营收')['evidence']
+            self.assertEqual({row['ticker'] for row in evidence}, {'AAA', 'BBB'})
 
     def test_long_passage_keeps_table_opening(self):
         text = 'Three Months Ended June 30, 2026 and 2025. USD in millions.\n' + '\n'.join(f'Financial item {i} | 1,200 | (300)' for i in range(500))
