@@ -353,7 +353,8 @@ def prepare(root: Path, datasets: list[Path], *, ticker=None, categories=(), for
                                               text=text, **{k: source[k] for k in ('ticker', 'company', 'publication_date',
                                                                                  'publication_period', 'category', 'form', 'report_date',
                                                                                  'fiscal_year', 'fiscal_quarter', 'report_year', 'locator')})
-                                out.write(json.dumps(record, ensure_ascii=False) + '\n')
+                                # GraphRAG splits JSONL with str.splitlines(), including U+2028/U+2029/NEL.
+                                out.write(json.dumps(record, ensure_ascii=True) + '\n')
                                 report['segments'] += 1
                                 report['characters'] += len(text)
                                 companies[meta['ticker']] += 1

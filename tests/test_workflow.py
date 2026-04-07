@@ -9,6 +9,20 @@ from ir_graphrag.engine import fingerprint, initialize, load_settings, resolve_e
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_jsonl_escapes_unicode_line_separators_for_graphrag(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            source = base / 'source'
+            source.mkdir()
+            body = 'Revenue 第一行\u2028Second paragraph\u2029Third paragraph\u0085Fourth paragraph.'
+            (source / 'report.txt').write_text(body, encoding='utf-8')
+            root = base / 'workspace'
+            prepare(root, [source])
+            # Match the upstream JSONL reader's splitlines behavior, not only LF iteration.
+            rows = (root / 'input/documents.jsonl').read_text().splitlines()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(json.loads(rows[0])['text'], body)
+
     def test_openclaw_transport_preserves_upstream_graph_format(self):
         from ir_graphrag.openclaw import encode_messages, decode_response, MARKER
         from graphrag_llm.types import LLMCompletionResponse
