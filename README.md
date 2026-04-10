@@ -14,6 +14,10 @@
 
 打开 <http://127.0.0.1:8501>，选择已有资料库，或在侧栏指定自己的本地数据目录建立新资料库。界面支持公司与截止日期筛选、明确财年/财季筛选、实际引用证据查看，以及带原文操作数的 Decimal 核算。
 
+界面采用浅灰与墨绿色的研究工作台布局：左侧集中选择资料库、公司与日期范围，主区域用于提问、查看回答和核对双列证据卡片；窄屏可收起侧栏。图谱构建、导入质量和资料导入仍在侧栏，数值核算位于回答下方。
+
+界面和新回答默认使用 **English**。右上角 **Language / 语言** 可切换 English / 简体中文；所选语言保存在网址的 `?lang=en` 或 `?lang=zh` 中，刷新后保留。切换语言会保留当前问题、筛选条件和核算输入。原始文档、引用片段和已保存回答保留原有语言。CLI 的 `ask` 默认英语回答，中文回答使用 `--language zh`；指定英语可用 `--language en`。
+
 需要新版导入行为时新建资料库，避免覆盖已有索引。资料库 `ingestion-report.json` 记录实际范围与提取问题；已导入文本不代表已完成图谱索引。
 
 ## 模型与安装
@@ -26,7 +30,7 @@
 - Embedding 实际模型：`openai/text-embedding-3-large`，通过请求头 `x-openclaw-model` 指定，真实探测为 **3072 维**。
 - 运行时读取 `~/.openclaw/openclaw.json` 的 `gateway.auth.token`，也可在资料库 `.env` 设置 `GRAPHRAG_API_KEY` 或 `OPENCLAW_CONFIG`；不提交真实密钥。
 
-需要 Python 3.11–3.13。当前验证环境为 Python 3.12.14。
+需要 Python 3.11–3.13、Streamlit 1.65+（语言切换依赖稳定的控件标识，以保留输入）。当前验证环境为 Python 3.12.14，锁定依赖已包含 Streamlit 1.65.0。
 
 ```bash
 python3.12 -m venv .venv
@@ -37,7 +41,7 @@ python3.12 -m venv .venv
 
 ### OpenAI、Z.ai 与 DeepSeek
 
-CLI `init --provider` 可选择服务。默认仍为 OpenClaw；现有资料库不自动修改。
+CLI `init --provider` 与界面的“导入新的资料库”均可选择服务。默认仍为 OpenClaw；现有资料库不自动修改。
 
 | `--provider` | 默认 Chat 模型 | API base | 密钥环境变量 |
 |---|---|---|---|

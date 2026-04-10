@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 from dotenv import dotenv_values
 
+from .i18n import DEFAULT_LANGUAGE, normalize_language
 from .ingest import write_json
 
 PROVIDERS = {
@@ -309,8 +310,15 @@ def merge_contexts(contexts: list[dict]) -> dict:
     return {table: list(rows.values()) for table, rows in merged.items()}
 
 
+def answer_language_instruction(language: str) -> str:
+    name = 'Simplified Chinese' if normalize_language(language) == 'zh' else 'English'
+    return (f'Write the answer in {name}, regardless of the question or source language. '
+            'This explicit output-language setting overrides generic instructions to match the user\'s language. '
+            'Preserve original names, financial units, and [Data: ...] citation labels and IDs.')
+
+
 def ask(root: Path, question: str, method='local', community_level=2, *, tickers=(), as_of=None,
-        forms=(), fiscal_year=None, fiscal_quarter=None) -> dict:
+        forms=(), fiscal_year=None, fiscal_quarter=None, language=DEFAULT_LANGUAGE) -> dict:
     import graphrag.api as api
     import pandas as pd
     root = root.expanduser().resolve()
@@ -318,11 +326,12 @@ def ask(root: Path, question: str, method='local', community_level=2, *, tickers
         raise ValueError('Unknown search method')
     if not question.strip():
         raise ValueError('Question must not be empty')
+    language = normalize_language(language)
     with workspace_lock(root):
         from .financial import answer as financial_answer, audit_citations
         filters = dict(tickers=tickers, as_of=as_of, forms=forms, fiscal_year=fiscal_year, fiscal_quarter=fiscal_quarter)
         if method == 'financial':
-            return financial_answer(root, question, **filters)
+            return financial_answer(root, question, language=language, **filters)
         if any(filters.values()):
             raise ValueError('Query-time company/date/fiscal filters require --method financial. For graph queries build a separately scoped workspace.')
         config = load_settings(root)
@@ -334,7 +343,9 @@ def ask(root: Path, question: str, method='local', community_level=2, *, tickers
         output = Path(config.output_storage.base_dir)
         tables = {name: pd.read_parquet(output / f'{name}.parquet') for name in
                   ('text_units', 'entities', 'relationships', 'communities', 'community_reports')}
-        args = dict(config=config, query=question, response_type='A precise, evidence-based answer in the same language as the question, with citations and relevant financial units and periods.')
+        args = dict(config=config, query=question,
+                    response_type='A precise, evidence-based answer with citations and relevant financial units and periods. '
+                                  + answer_language_instruction(language))
         contexts = []
         if method == 'drift':
             from graphrag.callbacks.noop_query_callbacks import NoopQueryCallbacks
@@ -353,6 +364,10 @@ def ask(root: Path, question: str, method='local', community_level=2, *, tickers
                 if method == 'local':
                     args['covariates'] = None
         answer, context = asyncio.run(getattr(api, f'{method}_search')(**args))
+        if method == 'global' and language == 'zh':
+            from graphrag.prompts.query.global_search_reduce_system_prompt import NO_DATA_ANSWER
+            if answer == NO_DATA_ANSWER:
+                answer = '抱歉，提供的数据不足以回答这个问题。'
         context = plain(context)
         if method == 'drift':
             context = merge_contexts([*contexts, context])
@@ -361,7 +376,7 @@ def ask(root: Path, question: str, method='local', community_level=2, *, tickers
         audit = audit_citations(answer, context)
         for item in evidence:
             item['cited'] = any(reference in audit['references'] for reference in item['references'])
-        result = dict(question=question, method=method, answer=answer, evidence=evidence, context=context,
+        result = dict(question=question, method=method, language=language, answer=answer, evidence=evidence, context=context,
                       citation_audit=audit,
                       scope=json.loads((root / 'ingestion-report.json').read_text())['scope'],
                       evidence_note='Evidence lists retrieved text and graph background, not a claim that every item was cited. Match answer [Data: ...] IDs to references; community background is not direct verification.')

@@ -14,7 +14,7 @@ dependencies = [
   "fonttools>=4.60,<5",
   "openpyxl>=3.1,<4",
   "xlrd>=2,<3",
-  "streamlit>=1.50,<2",
+  "streamlit>=1.65,<2",
 ]
 
 [project.scripts]

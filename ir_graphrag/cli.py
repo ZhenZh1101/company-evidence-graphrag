@@ -5,11 +5,12 @@ import sys
 from pathlib import Path
 
 from . import engine
+from .i18n import DEFAULT_LANGUAGE, LANGUAGES
 from .ingest import prepare, write_json
 
 
 def main():
-    parser = argparse.ArgumentParser(description='上市公司文档导入、Microsoft GraphRAG 索引与可追溯问答')
+    parser = argparse.ArgumentParser(description='Public-company document ingestion, Microsoft GraphRAG indexing, and source-traceable Q&A')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('init', 'prepare', 'doctor', 'index', 'ask', 'search', 'status'):
         p = sub.add_parser(command)
@@ -48,6 +49,7 @@ def main():
             if command == 'ask':
                 p.add_argument('--method', choices=['financial', 'local', 'global', 'basic', 'drift'], default='financial')
                 p.add_argument('--community-level', type=int, default=2)
+                p.add_argument('--language', choices=LANGUAGES, default=DEFAULT_LANGUAGE, help='Answer language (default: en)')
     calculation = sub.add_parser('calculate', help='Decimal comparison of two explicitly cited values')
     calculation.add_argument('--answer', type=Path, required=True, help='Saved answer/search JSON with evidence')
     calculation.add_argument('--operands', type=Path, required=True, help='JSON object containing current and previous operands')
@@ -90,6 +92,8 @@ def main():
                 output.parent.mkdir(parents=True, exist_ok=True)
                 write_json(output, result)
                 result = {'answer': result.get('answer'), 'saved': str(output), 'evidence_count': len(result['evidence'])}
+                if command == 'ask':
+                    result['language'] = args['language']
         else:
             result = {name: json.loads((root / name).read_text()) if (root / name).is_file() else None
                       for name in ('ingestion-report.json', 'index-ready.json')}

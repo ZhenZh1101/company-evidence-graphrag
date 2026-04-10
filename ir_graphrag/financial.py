@@ -12,6 +12,8 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+from .i18n import DEFAULT_LANGUAGE, normalize_language
+
 # Small, explicit query expansion for English filings queried in Chinese.
 TERMS = {
     '营收': 'revenue revenues sales', '收入': 'revenue revenues sales', '销售额': 'sales revenue',
@@ -238,18 +240,24 @@ def audit_citations(answer: str, context: dict) -> dict:
                 note='Checks reference IDs, not whether every claim is entailed by the cited text.')
 
 
-def answer(root: Path, question: str, **filters) -> dict:
+def answer(root: Path, question: str, *, language=DEFAULT_LANGUAGE, **filters) -> dict:
     from graphrag.query.context_builder.builders import BasicContextBuilder, ContextBuilderResult
     from graphrag.query.structured_search.basic_search.search import BasicSearch
     from graphrag_llm.completion.completion_factory import create_completion
     import pandas as pd
     import tiktoken
-    from .engine import RESEARCH_RULES, load_settings
+    from .engine import RESEARCH_RULES, answer_language_instruction, load_settings
 
+    language = normalize_language(language)
     result = search(root, question, **filters)
+    result['language'] = language
     evidence = result['evidence']
     if not evidence:
-        result.update(answer='在当前公司、发布日期和财务期间范围内，没有找到匹配的原文证据。无法据此给出财务数值；请检查筛选条件或改写指标名称。',
+        message = ('在当前公司、发布日期和财务期间范围内，没有找到匹配的原文证据。无法据此给出财务数值；请检查筛选条件或改写指标名称。'
+                   if language == 'zh' else
+                   'No matching source evidence was found for the selected company, publication date, and fiscal period. '
+                   'Financial figures cannot be provided from this evidence; check the filters or rephrase the metric name.')
+        result.update(answer=message,
                       context={'sources': []}, citation_audit=audit_citations('', {}), method='financial')
         return result
     tokenizer = tiktoken.get_encoding('cl100k_base')
@@ -286,9 +294,9 @@ are different; 1 percentage point is 100 basis points. Do not substitute a forec
 quarter when actual results are missing. Do not combine GAAP and adjusted/core values.
 Do not call model arithmetic verified. Source dates below are publication dates, not fiscal dates.
 If the question cannot be answered, specify exactly which evidence or period is missing.
-''' + RESEARCH_RULES
+''' + RESEARCH_RULES.replace("Answer in the user's language.", answer_language_instruction(language))
     query_engine = BasicSearch(model=model, context_builder=FinancialContext(), system_prompt=prompt,
-                              response_type='A concise answer in the language of the question with source citations.')
+                              response_type='A concise answer with source citations. ' + answer_language_instruction(language))
 
     async def generate():
         return ''.join([chunk async for chunk in query_engine.stream_search(question)])
