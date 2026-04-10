@@ -15,10 +15,18 @@ def main():
         p = sub.add_parser(command)
         p.add_argument('--root', type=Path, required=True, help='Isolated corpus/index workspace')
         if command == 'init':
-            p.add_argument('--model', default='openclaw/llm-gpt55')
-            p.add_argument('--embedding-model', default='openclaw/llm-gpt55')
-            p.add_argument('--api-base', default='http://127.0.0.1:18789/v1')
-            p.add_argument('--vector-size', type=int, default=1536)
+            p.add_argument('--provider', choices=list(engine.PROVIDERS), default='openclaw')
+            p.add_argument('--model', help='Chat model; defaults to the provider preset')
+            p.add_argument('--api-base', help='Chat API base URL; defaults to the provider endpoint')
+            p.add_argument('--api-key-env', help='Environment variable containing the chat API key')
+            p.add_argument('--embedding-provider', choices=['openclaw', 'openai'],
+                           help='Defaults to OpenClaw for OpenClaw chat, otherwise OpenAI')
+            p.add_argument('--embedding-model', help='Embedding model; defaults to the embedding provider preset')
+            p.add_argument('--embedding-api-base', help='Separate embedding API base URL')
+            p.add_argument('--embedding-api-key-env', help='Environment variable containing the embedding API key')
+            p.add_argument('--vector-size', type=int, help='Embedding dimensions; defaults to the provider preset (3072)')
+        if command == 'doctor':
+            p.add_argument('--chat-only', action='store_true', help='Check chat only; embeddings are not needed for financial Q&A')
         if command == 'prepare':
             p.add_argument('--dataset', type=Path, action='append', required=True)
             p.add_argument('--profile', choices=['all', 'financial'], default='all')
@@ -66,7 +74,7 @@ def main():
                 result = prepare(**args, progress=lambda n, title: print(f'[{n}] {title}', file=sys.stderr, flush=True) if n == 1 or n % 50 == 0 else None)
             result = {**result, 'issues': f'{len(result["issues"])} entries in ingestion-report.json'}
         elif command == 'doctor':
-            result = engine.doctor(root)
+            result = engine.doctor(**args)
         elif command == 'index':
             result = engine.build(root)
         elif command in {'ask', 'search'}:

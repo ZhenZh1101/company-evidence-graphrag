@@ -271,7 +271,7 @@ def answer(root: Path, question: str, **filters) -> dict:
         def build_context(self, query, **kwargs):
             return ContextBuilderResult(context_chunks='\n\n---\n\n'.join(chunks), context_records={'sources': pd.DataFrame(context['sources'])})
 
-    config = load_settings(root)
+    config = load_settings(root, require_embeddings=False)
     model = create_completion(config.completion_models[config.basic_search.completion_model_id])
     prompt = '''You answer financial research questions from the source records below.
 {context_data}

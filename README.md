@@ -22,8 +22,8 @@
 
 - Chat：`http://127.0.0.1:18789/v1/chat/completions`
 - Embedding：`http://127.0.0.1:18789/v1/embeddings`
-- 两者模型名：`openclaw/llm-gpt55`
-- Embedding：真实探测为 **1536 维**。
+- Chat 模型、Embedding 请求体的 `model`：`openclaw/llm-gpt55`
+- Embedding 实际模型：`openai/text-embedding-3-large`，通过请求头 `x-openclaw-model` 指定，真实探测为 **3072 维**。
 - 运行时读取 `~/.openclaw/openclaw.json` 的 `gateway.auth.token`，也可在资料库 `.env` 设置 `GRAPHRAG_API_KEY` 或 `OPENCLAW_CONFIG`；不提交真实密钥。
 
 需要 Python 3.11–3.13。当前验证环境为 Python 3.12.14。
@@ -33,7 +33,60 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 ```
 
-只安装直接依赖并允许重新解析传递版本，可用 `.venv/bin/python -m pip install -e .`。更换兼容 API：`init --api-base ... --model ... --embedding-model ... --vector-size ...`，在新资料库 `.env` 设置该服务的密钥，再运行 `doctor`。
+只安装直接依赖并允许重新解析传递版本，可用 `.venv/bin/python -m pip install -e .`。
+
+### OpenAI、Z.ai 与 DeepSeek
+
+CLI `init --provider` 可选择服务。默认仍为 OpenClaw；现有资料库不自动修改。
+
+| `--provider` | 默认 Chat 模型 | API base | 密钥环境变量 |
+|---|---|---|---|
+| `openclaw` | `openclaw/llm-gpt55` | `http://127.0.0.1:18789/v1` | `GRAPHRAG_API_KEY` 或本地网关配置 |
+| `openai` | `gpt-4.1-mini` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `zai` | `glm-4.7` | `https://api.z.ai/api/paas/v4` | `ZAI_API_KEY` |
+| `deepseek` | `deepseek-flash` | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
+
+模型名可用 `--model` 覆盖；预设不是最新模型承诺，实际访问权限取决于账号。接入复用现有 GraphRAG/LiteLLM 依赖。接口依据：[OpenAI Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)、[Z.ai JSON 输出](https://docs.z.ai/guides/capabilities/struct-output)、[DeepSeek API](https://api-docs.deepseek.com/)。Z.ai/DeepSeek 的 Chat 接口使用 JSON Object；适配器把 GraphRAG 要求的 schema 加入提示，并按原 schema 校验响应。
+
+```bash
+# OpenAI：聊天与 Embedding 共用 OPENAI_API_KEY
+.venv/bin/ir-graphrag init --root workspaces/openai-demo --provider openai
+
+# Z.ai 或 DeepSeek：聊天使用各自密钥；建图默认另用 OpenAI Embedding
+.venv/bin/ir-graphrag init --root workspaces/zai-demo --provider zai
+.venv/bin/ir-graphrag init --root workspaces/deepseek-demo --provider deepseek
+
+# DeepSeek 聊天 + 原有本地 OpenClaw Embedding
+.venv/bin/ir-graphrag init --root workspaces/deepseek-local \
+  --provider deepseek --embedding-provider openclaw
+```
+
+初始化后，在**对应资料库的 `.env`** 填写所需密钥（格式见仓库 `.env.example`），或在启动 CLI/Streamlit 的进程环境中设置；进程环境优先。初始化不读取、不复制真实密钥，已有 `.env` 内容会保留。服务之间不自动共用密钥。
+
+**财务原文问答只需 Chat 密钥**，无需 OpenAI 或其他 Embedding 密钥；可用 `doctor --chat-only` 检查。建立图谱及向量检索需要 Embedding 服务。本项目将 Z.ai/DeepSeek 作为 Chat 提供商；默认搭配 OpenAI 的 `text-embedding-3-large`（3072 维），也可选择 OpenClaw。[OpenAI Embedding 文档](https://developers.openai.com/api/docs/guides/embeddings)、[Z.ai 接口目录](https://docs.z.ai/llms.txt)。
+
+OpenClaw 的 `--embedding-model` 和界面模型输入填写路由目标（默认 `openai/text-embedding-3-large`）；程序将其放入 `x-openclaw-model` 请求头，请求体仍使用 `openclaw/llm-gpt55`。直接使用 OpenAI 时填写 `text-embedding-3-large`。不指定 `--vector-size` 时使用预设的 3072 维。
+
+从旧 OpenClaw 配置迁移已有资料库时，更新 `embedding_models.default_embedding_model.call_args.extra_headers.x-openclaw-model` 和 `vector_store.vector_size`，并为 `embed_text.model_instance_name` 使用新的缓存名（例如 `text_embedding_3_large`），避免复用旧模型向量；然后重新建图。原文问答不受影响，Chat 抽取缓存可保留。新建资料库自动按 Embedding 地址、模型和维度区分向量缓存。`doctor` 会显示实际路由目标。
+
+```bash
+.venv/bin/ir-graphrag doctor --root workspaces/deepseek-demo --chat-only
+# 完整检查会调用 Chat 与 Embedding，检查 JSON 和向量维度，产生相应 API 用量
+.venv/bin/ir-graphrag doctor --root workspaces/deepseek-demo
+```
+
+独立覆盖地址、模型与密钥变量：
+
+```bash
+.venv/bin/ir-graphrag init --root workspaces/custom-api \
+  --provider openai --model my-chat-model --api-base https://chat.example.com/v1 \
+  --api-key-env CHAT_API_KEY \
+  --embedding-provider openai --embedding-model my-embedding-model \
+  --embedding-api-base https://embedding.example.com/v1 \
+  --embedding-api-key-env EMBEDDING_API_KEY --vector-size 1536
+```
+
+`--api-base` / `--embedding-api-base` 填 API base，不含 `/chat/completions` 或 `/embeddings`。`--vector-size` 是向量库期望维度，不会自动缩减模型输出维度；需与所选模型实际输出一致。已有资料库可编辑 `settings.yaml` 的 `completion_models` / `embedding_models`：密钥使用 `${变量名}`；Z.ai/DeepSeek completion 的 `type` 设为 `ir_json_chat`，`model_provider` 设为 `openai`。配置改变后运行 `doctor`；已有图谱需重建后再查询，财务原文问答无需重建图谱。
 
 ## 财务原文问答
 

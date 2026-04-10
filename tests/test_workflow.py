@@ -123,7 +123,7 @@ class WorkflowTests(unittest.TestCase):
                 config = load_settings(root)
             self.assertEqual(Path.cwd(), before)
             self.assertEqual(config.completion_models['default_completion_model'].api_key, 'test-key-with:$symbols')
-            self.assertEqual(config.vector_store.vector_size, 1536)
+            self.assertEqual(config.vector_store.vector_size, 3072)
             self.assertEqual(config.input.file_pattern, r'.*\.jsonl$')
             self.assertEqual(Path(config.input_storage.base_dir), (root / 'input').resolve())
             first = fingerprint(root, config)
