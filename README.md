@@ -194,6 +194,16 @@ CLI 默认 `--method financial`。首次查询自动建立本地全文索引，*
 
 全量建图可能运行很久；先选财务范围或小样本。导入报告的 token 数只是字符数除以 4，不是计费估算。上游自定义模型成本记录为零不代表免费。
 
+### 恢复未完成的向量生成
+
+适用于 GraphRAG 3.2 中图表、社区报告及实体向量均已完成，仅报告或原文向量未完成的工作区；工作区不能已有 `index-ready.json` 完成标记，输入必须与导入报告及已保存文档一致。
+
+```bash
+.venv/bin/python scripts/resume_embeddings.py --root "$WORKSPACE"
+```
+
+脚本先备份配置、输出目录及默认路径 `logs/indexing-engine.log`，将 `embed_text.batch_max_tokens` 调整为 1,200，并用实际语料检查每条及每批输入是否超过本地网关的 8,192 字符限制；1,200 tokens 本身不保证字符安全。只续跑报告与原文向量，验证向量和保留文件后才写入完成标记。备份仅完整复制配置中的输出目录；请使用默认目录布局，输出目录之外的自定义向量库不包含在该备份中。
+
 ## 引用、质量和运行边界
 
 - 回答 JSON 保留 `answer`、`evidence`、`context`、范围以及 `citation_audit`。`Sources:123` 对应 `[Data: Sources (123)]`。界面可只显示实际引用的证据，并查看原始路径、PDF 页码/表格位置、网页 URL 和片段。
