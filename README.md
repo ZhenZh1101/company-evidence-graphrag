@@ -4,6 +4,16 @@
 
 财务数字优先从原文取证：**季度与年初至今、GAAP 与 Core/调整后、实际与指引、公告日与财务期间分别处理**。原文模式使用 SQLite FTS5 检索，交由上游 GraphRAG `BasicSearch` 生成回答；图谱模式调用上游建图、local/global/DRIFT API。原文模式不要求先完成昂贵的全量图谱，也不声称自己使用了图谱推理。
 
+## 账号服务配置
+
+账号服务从应用进程环境变量 `GRAPHRAG_AUTH_USERS_JSON` 读取用户名到 PBKDF2-SHA256 密码哈希的 JSON 映射，不内置账号。模型资料库的 `.env` 不用于配置界面账号。先生成密码哈希，再将 JSON 配置导出到启动应用的 shell：
+
+```bash
+export GRAPHRAG_AUTH_USERS_JSON="$(.venv/bin/python -c 'import getpass, json; from ir_graphrag.auth import hash_password; print(json.dumps({"reader": hash_password(getpass.getpass("New login password: "))}))')"
+```
+
+将 `reader` 改为自己的用户名；密码通过交互输入，不写入命令历史。多账号配置是在同一 JSON 对象中放入各自的用户名和哈希。正式账号配置及密码不要写进源码或测试。
+
 ## 直接使用
 
 安装依赖后，在项目根目录启动界面：
