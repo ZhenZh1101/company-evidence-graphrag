@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -7,10 +8,21 @@ from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
+from ir_graphrag.auth import hash_password
+from ir_graphrag.auth_ui import get_auth_service
+
+
+TEST_USERS_JSON = json.dumps({'reader': hash_password('ui-test-password'),
+                              'reviewer': hash_password('ui-review-password')})
 
 
 class UILanguageTests(unittest.TestCase):
     def setUp(self):
+        auth_environment = patch.dict(os.environ, {'GRAPHRAG_AUTH_USERS_JSON': TEST_USERS_JSON})
+        auth_environment.start()
+        self.addCleanup(auth_environment.stop)
+        get_auth_service.clear()
+        self.addCleanup(get_auth_service.clear)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         workspaces = Path(temporary.name) / 'workspaces'
@@ -30,7 +42,14 @@ class UILanguageTests(unittest.TestCase):
                                 f'WORKSPACES = Path({str(workspaces)!r})')
         self.source = source
         self.app = AppTest.from_string(source, default_timeout=10)
-        self.app.run()
+        self.login(self.app)
+
+    def login(self, app):
+        app.run()
+        app.text_input('login_username').input('reader')
+        app.text_input('login_password').input('ui-test-password')
+        app.button('login_submit').click().run()
+        self.assertFalse(app.exception)
 
     def assert_language(self, language):
         self.assertFalse(self.app.exception)
@@ -50,7 +69,7 @@ class UILanguageTests(unittest.TestCase):
             with self.subTest(requested=requested):
                 app = AppTest.from_string(self.source, default_timeout=10)
                 app.query_params['lang'] = requested
-                app.run()
+                self.login(app)
                 self.app = app
                 self.assert_language(expected)
 

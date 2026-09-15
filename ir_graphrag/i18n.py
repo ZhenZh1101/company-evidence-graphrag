@@ -4,6 +4,16 @@ DEFAULT_LANGUAGE = 'en'
 LANGUAGES = {'en': 'English', 'zh': '简体中文'}
 
 ZH = {
+    'Login is not configured. Contact the administrator.': '尚未配置登录，请联系管理员。',
+    'Log in': '登录',
+    'Log in to view documents and use GraphRAG.': '登录后可查看资料并使用 GraphRAG。',
+    'Username': '用户名',
+    'Password': '密码',
+    'Signed in as {username}': '当前用户：{username}',
+    'Log out': '退出登录',
+    'Incorrect username or password.': '用户名或密码错误。',
+    'Login is temporarily busy. Try again later.': '登录暂时繁忙，请稍后重试。',
+    'Too many login attempts. Try again later.': '登录尝试过于频繁，请稍后重试。',
     'Research workspace · Archived documents, traceable answers': '研究工作台 · 归档资料，可追溯的回答',
     'Evidence-based research': '基于证据的研究',
     'Search company disclosures. Ask precise questions. Verify the original evidence.': '检索公司披露，提出具体问题，核对原文证据。',

@@ -1,3 +1,5 @@
+import json
+import os
 import contextlib
 import io
 import subprocess
@@ -8,8 +10,14 @@ from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
+from ir_graphrag.auth import hash_password
+from ir_graphrag.auth_ui import get_auth_service
 from ir_graphrag.cli import main
 from ir_graphrag.engine import PROVIDERS
+
+
+TEST_USERS_JSON = json.dumps({'reader': hash_password('ui-test-password'),
+                              'reviewer': hash_password('ui-review-password')})
 
 
 class ProviderUITests(unittest.TestCase):
@@ -34,10 +42,18 @@ class ProviderUITests(unittest.TestCase):
         doctor.assert_called_once_with(root=root, chat_only=True)
 
     def test_provider_defaults_reset_and_reach_init_command(self):
+        auth_environment = patch.dict(os.environ, {'GRAPHRAG_AUTH_USERS_JSON': TEST_USERS_JSON})
+        auth_environment.start()
+        self.addCleanup(auth_environment.stop)
+        get_auth_service.clear()
+        self.addCleanup(get_auth_service.clear)
         with tempfile.TemporaryDirectory() as temp:
             app_file = Path(temp) / 'app.py'
             app_file.write_text((Path(__file__).resolve().parents[1] / 'app.py').read_text())
             app = AppTest.from_file(str(app_file)).run()
+            app.text_input('login_username').input('reader')
+            app.text_input('login_password').input('ui-test-password')
+            app.button('login_submit').click().run()
             self.assertFalse(app.exception)
             self.assertEqual(app.text_input(key='init-embedding-model:openclaw:openclaw').value,
                              'openai/text-embedding-3-large')

@@ -7,6 +7,7 @@ from html import escape
 from pathlib import Path
 
 import streamlit as st
+from ir_graphrag.auth_ui import download_json, logout, require_login
 from ir_graphrag.calculations import calculate_change
 from ir_graphrag.engine import PROVIDERS
 from ir_graphrag.i18n import LANGUAGES, normalize_language, translate
@@ -49,6 +50,7 @@ st.html('''<style>
 [data-testid="stSidebarHeader"] { position: absolute; top: 88px; right: 0; height: 28px; padding: 0 5px; }
 .stMainBlockContainer { max-width: 1180px; padding: 124px 44px 56px; }
 .stMainBlockContainer > [data-testid="stVerticalBlock"] { gap: 18px; }
+.st-key-login-card { max-width: 420px; margin: 24px auto; }
 .eyebrow { font-size: 11px; letter-spacing: 1.6px; color: var(--accent); text-transform: uppercase; font-weight: 700; }
 h1 { font-size: 30px !important; line-height: 1.4 !important; letter-spacing: -.5px; padding: 0 !important; }
 h2 { font-size: 19px !important; letter-spacing: -.2px; }
@@ -72,6 +74,7 @@ button[kind="primary"] { background: var(--accent); border-color: var(--accent);
 button[kind="primary"]:hover { background: #115650; border-color: #115650; }
 button[kind="primary"]:disabled { background: var(--accent); border-color: var(--accent); color: white; opacity: .45; }
 button[kind="secondary"], [data-testid="stDownloadButton"] button, [data-testid="stLinkButton"] a { border-color: var(--line); border-radius: 7px; background: white; font-size: 12px; }
+.json-download { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 7px; background: white; font-size: 12px; color: var(--ink) !important; text-decoration: none; }
 button:focus-visible, a:focus-visible { outline: 3px solid #76bbae !important; outline-offset: 3px; }
 .st-key-question-composer { background: white; border: 1px solid #c9d8dc; border-radius: 14px; padding: 18px 20px 14px; box-shadow: 0 4px 14px #16323b06; }
 .st-key-question-composer [data-testid="stTextArea"] textarea { border: 0; padding: 8px 0; font-size: 15px; line-height: 1.75; min-height: 122px; }
@@ -126,6 +129,7 @@ with st.container(key='language-control'):
                             label_visibility='collapsed', help=t('Applies to the interface and new answers. Source text and saved answers keep their original language.'))
 if st.query_params.get('lang') != language:
     st.query_params['lang'] = language
+username = require_login(t)
 st.html(f'<div class="eyebrow">{escape(t("Evidence-based research"))}</div>')
 st.title(t('Public Company GraphRAG'))
 st.html(f'<p class="lede">{escape(t("Search company disclosures. Ask precise questions. Verify the original evidence."))}</p>')
@@ -141,6 +145,8 @@ def run_command(command, root, *args):
 
 
 with st.sidebar:
+    st.caption(t('Signed in as {username}', username=username))
+    st.button(t('Log out'), key='logout', on_click=logout)
     st.html(f'<div class="eyebrow">{escape(t("Document library"))}</div>')
     workspaces = sorted((p for p in WORKSPACES.glob('*') if (p / 'settings.yaml').is_file()),
                         key=lambda p: (not (p / 'index-ready.json').exists(), p.name))
@@ -223,7 +229,7 @@ with library_tools.expander(t('Data scope and import quality'), expanded=not rep
     st.caption(t('Date filters use publication dates; unknown dates are not inferred. Only readable text is extracted. Scanned pages, chart images and untranscribed videos may be incomplete; check the originals.'))
     if report.get('issues'):
         st.dataframe(report['issues'], width='stretch')
-    st.download_button(t('Download import report'), json.dumps(report, ensure_ascii=False, indent=2), file_name='ingestion-report.json', mime='application/json')
+    download_json(t('Download import report'), report, file_name='ingestion-report.json')
 
 if not ready.is_file():
     with library_tools.expander(t('Build a relationship graph')):
@@ -249,6 +255,7 @@ filter_args = []
 if method == 'financial':
     with research_scope:
         tickers = st.multiselect(t('Companies'), sorted(report.get('companies', {})),
+                                default=[],
                                 placeholder=t('Choose companies'), key=f'tickers:{root}')
         st.caption(t('Leave companies unselected to search the entire workspace.'))
         as_of = st.text_input(t('Only use materials published on or before this date (optional)'), placeholder='2026-09-26', key=f'as_of:{root}')
@@ -339,7 +346,7 @@ if st.session_state.get('answer', (None,))[0] == str(root):
         st.caption(t('No evidence matches this view. Turn off the citation filter to see all retrieved sources.') if result['evidence'] else t('No source evidence was retrieved for this answer.'))
     if len(shown) > 50:
         st.caption(t('Showing the first 50 items. Download all {count} evidence items below.', count=len(result['evidence'])))
-    st.download_button(t('Download answer and all evidence'), json.dumps(result, ensure_ascii=False, indent=2), file_name='answer.json', mime='application/json')
+    download_json(t('Download answer and all evidence'), result, file_name='answer.json')
     with st.expander(t('Calculate change / percentage points / basis points from cited values')):
         st.caption(t('Values must appear in full in the selected source, including minus signs and parentheses. Confirm the metric, units, periods and accounting basis yourself. The program checks citations and arithmetic, not accounting judgments.'))
         metric = st.text_input(t('Metric to compare'), placeholder=t('Total sales'), key=f'calc-metric:{root}')
@@ -363,7 +370,7 @@ if st.session_state.get('answer', (None,))[0] == str(root):
                 if calculated['difference_basis_points'] is not None:
                     st.write(t('Basis point change:'), calculated['difference_basis_points'])
                 st.write(t('Percentage change:'), calculated['growth_percent'] + '%' if calculated['growth_percent'] is not None else t('The previous value is zero or negative; a growth rate would be misleading.'))
-                st.download_button(t('Download calculation and operand sources'), json.dumps(calculated, ensure_ascii=False, indent=2), file_name='calculation.json', mime='application/json')
+                download_json(t('Download calculation and operand sources'), calculated, file_name='calculation.json')
             except ValueError as exc:
                 st.error(str(exc))
 else:
