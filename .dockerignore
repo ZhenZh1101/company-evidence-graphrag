@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!requirements.lock
+!pyproject.toml
+!app.py
+!ir_graphrag/
+!ir_graphrag/*.py
+!.streamlit/
+!.streamlit/config.toml
+!deployment/
+!deployment/workspaces.tar.gz

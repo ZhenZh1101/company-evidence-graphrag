@@ -1,8 +1,46 @@
+---
+title: Company Evidence GraphRAG
+emoji: 🔎
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 上市公司 GraphRAG
 
 基于 [Microsoft GraphRAG 3.2.0](https://github.com/microsoft/graphrag/tree/v3.2.0) 的本地金融文档研究系统。提供财务原文检索、可追溯回答、原文数值核算，以及实体关系、社区主题分析。
 
 财务数字优先从原文取证：**季度与年初至今、GAAP 与 Core/调整后、实际与指引、公告日与财务期间分别处理**。原文模式使用 SQLite FTS5 检索，交由上游 GraphRAG `BasicSearch` 生成回答；图谱模式调用上游建图、local/global/DRIFT API。原文模式不要求先完成昂贵的全量图谱，也不声称自己使用了图谱推理。
+
+## Hugging Face Docker Space
+
+可使用 Docker 部署到 Hugging Face Space；镜像使用 Python 3.12，应用监听端口 7860。私有 Space 还需要平台访问权限；应用登录单独配置。
+
+启动前，在 Space **Settings → Secrets** 中设置 `GRAPHRAG_AUTH_USERS_JSON`，内容为用户名到 PBKDF2-SHA256 密码哈希的 JSON 映射。应用从进程环境读取此配置，不内置账号。模型密钥也通过 Secrets 注入：OpenAI 使用 `OPENAI_API_KEY`，DeepSeek 使用 `DEEPSEEK_API_KEY`，Z.ai 使用 `ZAI_API_KEY`；Chat 和 Embedding 使用不同服务时，分别设置相应密钥。
+
+打包脚本读取项目 `workspaces/` 下的资料库，为部署副本迁移接口配置与绝对路径，不修改原资料库。它排除 `.env`、日志、缓存、备份及符号链接；Docker 构建上下文只包含应用所需文件和生成的资料库归档，不包含测试或本地资料目录。已完成图谱在打包时校验输入指纹、表格和向量；未完成图谱只包含原文资料，不携带部分图谱输出。图谱的抽取模型来源会保留在迁移记录中，切换查询模型不会重新抽取图谱。
+
+```bash
+.venv/bin/python scripts/package_space_workspaces.py \
+  --output deployment/workspaces.tar.gz --provider openai
+docker build -t company-evidence-graphrag .
+```
+
+`--provider` 可选 `openai`、`deepseek`、`zai` 或 `openclaw`，`--model` 可覆盖 Chat 模型。OpenClaw 还需要 `--api-base` 指定不含凭据的公网 HTTPS 接口，并设置 `GRAPHRAG_API_KEY`；本机回环地址不能供远端 Space 使用。打包仅支持本地 LanceDB 和 3072 维的 `text-embedding-3-large` 兼容向量；OpenAI、DeepSeek 和 Z.ai 部署副本使用 OpenAI Embedding，因此需要 `OPENAI_API_KEY`。
+
+如需额外包含已验证的图谱备份，可在同一次打包时添加 `--snapshot`，依次传入唯一快照目录名、备份路径、原资料库路径：
+
+```bash
+.venv/bin/python scripts/package_space_workspaces.py \
+  --output deployment/workspaces.tar.gz --provider openai \
+  --snapshot "$SNAPSHOT_NAME" "$SNAPSHOT_SOURCE" "$ORIGINAL_WORKSPACE"
+```
+
+快照备份必须含有效的 `index-ready.json`；`--snapshot` 可重复。资料库归档位于已忽略的 `deployment/` 目录，不应提交到 Git。
+
+镜像中的资料库是打包时的固定快照，本机后续修改不会自动同步。运行期间新增的回答和导入数据尚未配置持久存储，Space 重建或重启后可能丢失；需要保留的回答应下载 JSON。
 
 ## 账号服务配置
 
