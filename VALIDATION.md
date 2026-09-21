@@ -1,8 +1,8 @@
-# 金融文本验证方法
+# Financial Text Validation Method
 
-先在项目根目录安装依赖，并将 `WORKSPACE` 设为待验证资料库的路径。以下为复现方法；具体数据、运行报告和界面截图由使用者保存在本地，不在此声明某家公司或资料库已经通过验证。
+First, install the dependencies from the project root and set `WORKSPACE` to the path of the workspace to validate. The steps below describe how to reproduce the checks. Users keep the specific data, run reports, and UI screenshots locally; this document does not claim that any particular company or workspace has passed validation.
 
-## 自动检查
+## Automated Checks
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
@@ -10,56 +10,56 @@
 .venv/bin/ir-graphrag status --root "$WORKSPACE"
 ```
 
-## 财务问答评估
+## Financial Question-Answering Evaluation
 
-评估案例由调用者提供，不内置公司、财务数值、截止日或答案路径。将 `CASES` 设为外部案例 JSON 文件路径；文件内容为非空数组，每项包含：
+The caller supplies evaluation cases. No companies, financial values, cutoff dates, or answer paths are built in. Set `CASES` to the path of an external JSON case file. The file must contain a nonempty array, with each item containing:
 
-- `name`：唯一答案文件名，不含扩展名，仅使用字母、数字、`_`、`-`。
-- `question`：非空问题字符串。
-- `filters`：查询范围对象；可包含 `tickers` / `forms` 字符串数组、`as_of`（`YYYY-MM-DD`）、`fiscal_year`、`fiscal_quarter`。只填写原始资料能够支持的范围。
-- `expected`：预期数值的十进制字符串数组。
-- `units`：要核对的单位标签数组，支持 `million`、`thousand`、`per_share`。
+- `name`: a unique answer filename without an extension, using only letters, digits, `_`, and `-`.
+- `question`: a nonempty question string.
+- `filters`: an object defining the query scope. It may include `tickers` / `forms` string arrays, `as_of` (`YYYY-MM-DD`), `fiscal_year`, and `fiscal_quarter`. Include only scope constraints supported by the source material.
+- `expected`: an array of decimal strings representing the expected values.
+- `units`: an array of unit labels to check. Supported labels are `million`, `thousand`, and `per_share`.
 
-`expected` 与 `units` 都为空时，检查该范围下是否明确回答证据不足。预期值应由人对照原始披露填写。离线模式读取资料库 `answers/<name>.json`；实时模式调用模型并保存回答。
+When both `expected` and `units` are empty, the evaluation checks whether the answer explicitly states that there is insufficient evidence within the specified scope. A person should fill in expected values by checking the original disclosures. Offline mode reads `answers/<name>.json` in the workspace; live mode calls the model and saves the answers.
 
 ```bash
-# 离线复核已有答案，不调用模型：
+# Recheck saved answers offline, without calling the model:
 .venv/bin/python scripts/evaluate_financial.py --root "$WORKSPACE" --cases "$CASES"
-# 用当前检索器和模型重新回答并检查：
+# Generate and check new answers with the current retriever and model:
 .venv/bin/python scripts/evaluate_financial.py --root "$WORKSPACE" --cases "$CASES" \
   --live --output "$WORKSPACE/evaluation.json"
 ```
 
-评估核对配置中的数值及负号、单位标签、查询范围、引用编号、被引用直接证据内的数值和本地源文件存在性。**这是指定案例的功能检查，不是整个语料库的语义财务准确率评测。** 数值出现在证据里也不能自动证明模型选对了行列或会计口径。
+The evaluation checks the configured values and negative signs, unit labels, query scope, citation identifiers, values in the cited direct evidence, and the existence of local source files. **This is a functional check of specified cases, not an evaluation of semantic financial accuracy across the entire corpus.** A value appearing in the evidence does not automatically prove that the model selected the correct row, column, or accounting basis.
 
-## 导入范围检查
+## Ingestion Scope Checks
 
-检查资料库 `ingestion-report.json` 中的财务披露选择、正文/表格/页面片段、去重、文件级失败、空白/稀疏内容、关联媒体与截断 HTML 回退。记录实际范围与提取问题，保留原始数据；导入完成不能证明 OCR、图表或视频内容已经完整理解。
+Inspect the workspace's `ingestion-report.json` for financial disclosure selection, body/table/page chunks, deduplication, file-level failures, blank/sparse content, associated media, and fallback from truncated HTML. Record the actual scope and extraction issues, and retain the source data. Completed ingestion does not prove that OCR, charts, or video content have been fully understood.
 
-归档可能缺少 `fiscal_year/fiscal_quarter` 字段。系统保留未知状态，不从公告日推断财季；启用财年/财季严格筛选时，缺这些字段的原文会被排除。遇到缺失元数据的发布稿，应通过公司、截止日和问题中的财务期间查询。
+Archives may lack `fiscal_year/fiscal_quarter` fields. The system preserves the unknown state and does not infer the fiscal quarter from the announcement date. When strict fiscal year/quarter filtering is enabled, source text missing these fields is excluded. For press releases with missing metadata, query using the company, cutoff date, and the financial period stated in the question.
 
-## 确定性核算
+## Deterministic Calculations
 
-从已保存答案或检索结果中选取两个完整原文行作为操作数出处，使用外部操作数 JSON 运行 `calculate`，逐项核对：
+Select two complete source lines from saved answers or retrieval results as the sources for the operands. Run `calculate` with an external operand JSON file and check each of the following:
 
-- 完整带符号数值、括号与 Unicode 负号的处理。
-- USD、千/百万/十亿美元换算，以及百分率差额、百分点与基点。
-- 拒绝裁剪数字或负号、不同维度单位、不同指标/口径、相同期间。
-- 零或负基期不输出增长率。
+- Handling of complete signed values, parentheses, and Unicode minus signs.
+- USD conversions between thousands, millions, and billions, as well as percentage differences, percentage points, and basis points.
+- Rejection of truncated numbers or negative signs, units with different dimensions, different metrics/accounting bases, and identical periods.
+- No growth rate is produced for a zero or negative base-period value.
 
-数值与引用校验、Decimal 算术由代码执行。操作数的期间、单位、指标及会计口径标签由使用者指定，语义解释未被自动核实。
+Value and citation validation and Decimal arithmetic are performed in code. Users specify the operands' period, unit, metric, and accounting-basis labels; the semantic interpretation is not automatically verified.
 
-## 回归检查要点
+## Regression Checkpoints
 
-1. 截断 HTML 存在完整 TXT 时回退并记录问题。
-2. 表格保留 rowspan/colspan、会计符号、单位与独立定位；长 TXT 继承临近印刷表头。
-3. 同问多个指标时保留各指标候选，检查原文金额表是否进入证据。
-4. 分开保留发布日、报告截止日、财年与财季，不从公告日期推断。
-5. 导入与查询标准化 ISO 日期，截止日之后的资料不进入模型上下文。
-6. 核对回答引用编号与实际引用证据；编号正确不代表结论正确。
-7. 没有全量图谱时检查金融原文问答；图谱方法需单独建图后验证。
+1. Fall back from truncated HTML to a complete TXT file when available, and record the issue.
+2. Preserve rowspan/colspan, accounting symbols, units, and independent table locations; carry nearby printed table headers into long TXT chunks.
+3. Retain candidates for each metric when a question asks about multiple metrics, and check that the source tables containing the amounts are included in the evidence.
+4. Keep publication date, reporting period end date, fiscal year, and fiscal quarter separate; do not infer them from the announcement date.
+5. Normalize ISO dates during ingestion and querying; exclude material after the cutoff date from the model context.
+6. Check citation identifiers in answers against the evidence actually cited; correct identifiers do not imply correct conclusions.
+7. Check financial source-text question answering without a complete graph; graph methods require separate graph construction and validation.
 
-## 保留的边界
+## Remaining Limitations
 
-- 关键词/指标词表不是完整语义检索，未覆盖所有财务指标、语言或表格形式。
-- 跨公司口径可比性、会计重述消歧、OCR、复杂图表理解与全语料准确率需另行评估。
+- Keyword/metric vocabularies do not provide complete semantic retrieval and do not cover every financial metric, language, or table format.
+- Comparability of accounting bases across companies, disambiguation of accounting restatements, OCR, understanding of complex charts, and accuracy across the entire corpus require separate evaluation.

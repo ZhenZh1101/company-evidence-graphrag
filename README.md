@@ -1,26 +1,16 @@
----
-title: Company Evidence GraphRAG
-emoji: 🔎
-colorFrom: green
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
----
+# Company Evidence GraphRAG
 
-# 上市公司 GraphRAG
+A local financial document research system built on [Microsoft GraphRAG 3.2.0](https://github.com/microsoft/graphrag/tree/v3.2.0). It provides source document retrieval, traceable answers, calculations using cited source values, and analysis of entity relationships and community themes.
 
-基于 [Microsoft GraphRAG 3.2.0](https://github.com/microsoft/graphrag/tree/v3.2.0) 的本地金融文档研究系统。提供财务原文检索、可追溯回答、原文数值核算，以及实体关系、社区主题分析。
-
-财务数字优先从原文取证：**季度与年初至今、GAAP 与 Core/调整后、实际与指引、公告日与财务期间分别处理**。原文模式使用 SQLite FTS5 检索，交由上游 GraphRAG `BasicSearch` 生成回答；图谱模式调用上游建图、local/global/DRIFT API。原文模式不要求先完成昂贵的全量图谱，也不声称自己使用了图谱推理。
+Financial figures are grounded in source documents first: **quarterly and year-to-date figures, GAAP and Core/adjusted measures, actual results and guidance, and publication dates and financial periods are treated separately**. Source document mode uses SQLite FTS5 for retrieval and upstream GraphRAG `BasicSearch` to generate answers; graph mode uses the upstream indexing and local/global/DRIFT APIs. Source document mode does not require an expensive full graph build and does not claim to perform graph reasoning.
 
 ## Hugging Face Docker Space
 
-可使用 Docker 部署到 Hugging Face Space；镜像使用 Python 3.12，应用监听端口 7860。私有 Space 还需要平台访问权限；应用登录单独配置。
+The application can be deployed to a Hugging Face Space using Docker. The image uses Python 3.12, and the application listens on port 7860. A private Space also requires platform access; application login is configured separately.
 
-启动前，在 Space **Settings → Secrets** 中设置 `GRAPHRAG_AUTH_USERS_JSON`，内容为用户名到 PBKDF2-SHA256 密码哈希的 JSON 映射。应用从进程环境读取此配置，不内置账号。模型密钥也通过 Secrets 注入：OpenAI 使用 `OPENAI_API_KEY`，DeepSeek 使用 `DEEPSEEK_API_KEY`，Z.ai 使用 `ZAI_API_KEY`；Chat 和 Embedding 使用不同服务时，分别设置相应密钥。
+Before starting, set `GRAPHRAG_AUTH_USERS_JSON` under the Space's **Settings → Secrets** to a JSON mapping from usernames to PBKDF2-SHA256 password hashes. The application reads this configuration from its process environment and has no built-in accounts. Model keys are also injected through Secrets: use `OPENAI_API_KEY` for OpenAI, `DEEPSEEK_API_KEY` for DeepSeek, and `ZAI_API_KEY` for Z.ai. When Chat and Embedding use different services, configure the corresponding keys separately.
 
-打包脚本读取项目 `workspaces/` 下的资料库，为部署副本迁移接口配置与绝对路径，不修改原资料库。它排除 `.env`、日志、缓存、备份及符号链接；Docker 构建上下文只包含应用所需文件和生成的资料库归档，不包含测试或本地资料目录。已完成图谱在打包时校验输入指纹、表格和向量；未完成图谱只包含原文资料，不携带部分图谱输出。图谱的抽取模型来源会保留在迁移记录中，切换查询模型不会重新抽取图谱。
+The packaging script reads libraries under the project's `workspaces/` directory and migrates API configuration and absolute paths for deployment copies without changing the original libraries. It excludes `.env`, logs, caches, backups, and symbolic links. The Docker build context contains only the files required by the application and the generated library archive, excluding tests and local data directories. Completed graphs have their input fingerprints, tables, and vectors validated during packaging; incomplete graphs include only source documents, without partial graph outputs. The model used to extract the graph is retained in the migration record. Changing the query model does not re-extract the graph.
 
 ```bash
 .venv/bin/python scripts/package_space_workspaces.py \
@@ -28,9 +18,9 @@ pinned: false
 docker build -t company-evidence-graphrag .
 ```
 
-`--provider` 可选 `openai`、`deepseek`、`zai` 或 `openclaw`，`--model` 可覆盖 Chat 模型。OpenClaw 还需要 `--api-base` 指定不含凭据的公网 HTTPS 接口，并设置 `GRAPHRAG_API_KEY`；本机回环地址不能供远端 Space 使用。打包仅支持本地 LanceDB 和 3072 维的 `text-embedding-3-large` 兼容向量；OpenAI、DeepSeek 和 Z.ai 部署副本使用 OpenAI Embedding，因此需要 `OPENAI_API_KEY`。
+`--provider` accepts `openai`, `deepseek`, `zai`, or `openclaw`; `--model` overrides the Chat model. OpenClaw also requires `--api-base` to specify a public HTTPS endpoint without embedded credentials, plus `GRAPHRAG_API_KEY`. A local loopback address is not accessible from a remote Space. Packaging supports only local LanceDB and 3072-dimensional vectors compatible with `text-embedding-3-large`. OpenAI, DeepSeek, and Z.ai deployment copies use OpenAI Embedding and therefore require `OPENAI_API_KEY`.
 
-如需额外包含已验证的图谱备份，可在同一次打包时添加 `--snapshot`，依次传入唯一快照目录名、备份路径、原资料库路径：
+To include an additional verified graph backup, add `--snapshot` to the same packaging command, followed by a unique snapshot directory name, the backup path, and the original library path:
 
 ```bash
 .venv/bin/python scripts/package_space_workspaces.py \
@@ -38,103 +28,102 @@ docker build -t company-evidence-graphrag .
   --snapshot "$SNAPSHOT_NAME" "$SNAPSHOT_SOURCE" "$ORIGINAL_WORKSPACE"
 ```
 
-快照备份必须含有效的 `index-ready.json`；`--snapshot` 可重复。资料库归档位于已忽略的 `deployment/` 目录，不应提交到 Git。
+Snapshot backups must contain a valid `index-ready.json`. `--snapshot` can be repeated. The library archive is stored in the ignored `deployment/` directory and should not be committed to Git.
 
-镜像中的资料库是打包时的固定快照，本机后续修改不会自动同步。运行期间新增的回答和导入数据尚未配置持久存储，Space 重建或重启后可能丢失；需要保留的回答应下载 JSON。
+Libraries in the image are fixed snapshots taken at packaging time; subsequent local changes are not synchronized automatically. Persistent storage has not been configured for answers and data imported at runtime, so they may be lost when the Space is rebuilt or restarted. Download any answers you want to retain as JSON.
 
-## 账号服务配置
+## Account Service Configuration
 
-账号服务从应用进程环境变量 `GRAPHRAG_AUTH_USERS_JSON` 读取用户名到 PBKDF2-SHA256 密码哈希的 JSON 映射，不内置账号。模型资料库的 `.env` 不用于配置界面账号。先生成密码哈希，再将 JSON 配置导出到启动应用的 shell：
+The account service reads a JSON mapping from usernames to PBKDF2-SHA256 password hashes from the application process environment variable `GRAPHRAG_AUTH_USERS_JSON`. It has no built-in accounts. A library's model configuration `.env` is not used to configure interface accounts. Generate a password hash, then export the JSON configuration in the shell that starts the application:
 
 ```bash
 export GRAPHRAG_AUTH_USERS_JSON="$(.venv/bin/python -c 'import getpass, json; from ir_graphrag.auth import hash_password; print(json.dumps({"reader": hash_password(getpass.getpass("New login password: "))}))')"
 ```
 
-将 `reader` 改为自己的用户名；密码通过交互输入，不写入命令历史。多账号配置是在同一 JSON 对象中放入各自的用户名和哈希。正式账号配置及密码不要写进源码或测试。
+Replace `reader` with your username. The password is entered interactively and is not written to shell history. To configure multiple accounts, include their usernames and hashes in the same JSON object. Do not put production account configuration or passwords in source code or tests.
 
+The web interface requires login before reading libraries or executing commands and remains locked when account configuration is missing or invalid. Account configuration is loaded and cached on first use; restart the application after changing accounts or passwords.
 
-网页在读取资料库或执行命令前要求登录；账号配置缺失或格式无效时保持锁定。账号配置首次使用时加载并缓存，修改账号或密码后需要重启应用。
+All logged-in users share libraries and saved answers; data is not isolated between accounts. Sessions are stored on the server and last at most 12 hours. Logging out revokes the session and clears the current research state; refreshing the page or opening a new tab requires login again. Sessions, login rate limits, and password calculation concurrency limits are all held in a single process, and restarting the application invalidates sessions. These states must be shared separately before adding workers or replicas. Remote access should use HTTPS.
 
-所有登录用户共享资料库和已保存回答，没有账号间资料隔离。会话保存在服务端，最长 12 小时；退出会撤销会话并清空当前研究状态，刷新或新标签页需要重新登录。会话、登录限流和密码计算并发限制均位于单个进程内，应用重启会使会话失效；增加 worker 或副本前需另行共享这些状态。远程访问应通过 HTTPS。
+JSON exports use inline downloads on the current page, avoiding Streamlit media file URLs that could be accessed without login.
 
-导出 JSON 使用当前页面中的内联下载，避免创建无需登录就能访问的 Streamlit 媒体文件地址。
+## Getting Started
 
-## 直接使用
-
-安装依赖后，在项目根目录启动界面：
+After installing dependencies, start the interface from the project root:
 
 ```bash
 .venv/bin/streamlit run app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true --browser.gatherUsageStats false
 ```
 
-打开 <http://127.0.0.1:8501>，登录后选择已有资料库，或在侧栏指定自己的本地数据目录建立新资料库。界面支持公司与截止日期筛选、明确财年/财季筛选、实际引用证据查看，以及带原文操作数的 Decimal 核算。
+Open <http://127.0.0.1:8501>, log in, and select an existing library, or specify your local data directory in the sidebar to create a new one. The interface supports company and cutoff-date filters, explicit fiscal-year/fiscal-quarter filters, inspection of cited evidence, and Decimal calculations using source document operands.
 
-界面采用浅灰与墨绿色的研究工作台布局：左侧集中选择资料库、公司与日期范围，主区域用于提问、查看回答和核对双列证据卡片；窄屏可收起侧栏。图谱构建、导入质量和资料导入仍在侧栏，数值核算位于回答下方。
+The interface uses a light gray and dark green research workspace layout. The sidebar groups library, company, and date-range selection, while the main area supports questions, answers, and two-column evidence cards. The sidebar can be collapsed on narrow screens. Graph building, ingestion quality, and data import remain in the sidebar; numerical calculations appear below the answer.
 
-界面和新回答默认使用 **English**。右上角 **Language / 语言** 可切换 English / 简体中文；所选语言保存在网址的 `?lang=en` 或 `?lang=zh` 中，刷新后保留。切换语言会保留当前问题、筛选条件和核算输入。原始文档、引用片段和已保存回答保留原有语言。CLI 的 `ask` 默认英语回答，中文回答使用 `--language zh`；指定英语可用 `--language en`。
+The interface and new answers default to **English**. The **Language** selector in the upper-right corner switches between English and Simplified Chinese. The selected language is stored in the URL as `?lang=en` or `?lang=zh` and persists after refresh. Switching languages preserves the current question, filters, and calculation inputs. Original documents, quoted excerpts, and saved answers retain their original language. CLI `ask` answers in English by default; use `--language zh` for Chinese or `--language en` to specify English explicitly.
 
-需要新版导入行为时新建资料库，避免覆盖已有索引。资料库 `ingestion-report.json` 记录实际范围与提取问题；已导入文本不代表已完成图谱索引。
+Create a new library when you need the updated ingestion behavior to avoid overwriting an existing index. Each library's `ingestion-report.json` records the actual scope and extraction issues. Imported text does not mean graph indexing is complete.
 
-## 模型与安装
+## Models and Installation
 
-默认接入用户指定的 OpenClaw：
+The default connection uses the user-specified OpenClaw service:
 
-- Chat：`http://127.0.0.1:18789/v1/chat/completions`
-- Embedding：`http://127.0.0.1:18789/v1/embeddings`
-- Chat 模型、Embedding 请求体的 `model`：`openclaw/llm-gpt55`
-- Embedding 实际模型：`openai/text-embedding-3-large`，通过请求头 `x-openclaw-model` 指定，真实探测为 **3072 维**。
-- 运行时读取 `~/.openclaw/openclaw.json` 的 `gateway.auth.token`，也可在资料库 `.env` 设置 `GRAPHRAG_API_KEY` 或 `OPENCLAW_CONFIG`；不提交真实密钥。
+- Chat: `http://127.0.0.1:18789/v1/chat/completions`
+- Embedding: `http://127.0.0.1:18789/v1/embeddings`
+- Chat model and the `model` field in Embedding request bodies: `openclaw/llm-gpt55`
+- Actual Embedding model: `openai/text-embedding-3-large`, specified through the `x-openclaw-model` request header. A live probe returned **3072 dimensions**.
+- At runtime, the application reads `gateway.auth.token` from `~/.openclaw/openclaw.json`. Alternatively, set `GRAPHRAG_API_KEY` or `OPENCLAW_CONFIG` in the library's `.env`. Do not commit real keys.
 
-需要 Python 3.11–3.13、Streamlit 1.65+（语言切换依赖稳定的控件标识，以保留输入）。当前验证环境为 Python 3.12.14，锁定依赖已包含 Streamlit 1.65.0。
+Python 3.11–3.13 and Streamlit 1.65+ are required. Language switching relies on stable widget identities to preserve inputs. The validated environment uses Python 3.12.14, and the locked dependencies include Streamlit 1.65.0.
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
 ```
 
-只安装直接依赖并允许重新解析传递版本，可用 `.venv/bin/python -m pip install -e .`。
+To install only direct dependencies and allow transitive versions to be resolved again, use `.venv/bin/python -m pip install -e .`.
 
-### OpenAI、Z.ai 与 DeepSeek
+### OpenAI, Z.ai, and DeepSeek
 
-CLI `init --provider` 与界面的“导入新的资料库”均可选择服务。默认仍为 OpenClaw；现有资料库不自动修改。
+Select a provider through CLI `init --provider` or the interface's new-library import section. OpenClaw remains the default, and existing libraries are not modified automatically.
 
-| `--provider` | 默认 Chat 模型 | API base | 密钥环境变量 |
+| `--provider` | Default Chat model | API base | Key environment variable |
 |---|---|---|---|
-| `openclaw` | `openclaw/llm-gpt55` | `http://127.0.0.1:18789/v1` | `GRAPHRAG_API_KEY` 或本地网关配置 |
+| `openclaw` | `openclaw/llm-gpt55` | `http://127.0.0.1:18789/v1` | `GRAPHRAG_API_KEY` or local gateway configuration |
 | `openai` | `gpt-4.1-mini` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
 | `zai` | `glm-4.7` | `https://api.z.ai/api/paas/v4` | `ZAI_API_KEY` |
 | `deepseek` | `deepseek-flash` | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
 
-模型名可用 `--model` 覆盖；预设不是最新模型承诺，实际访问权限取决于账号。接入复用现有 GraphRAG/LiteLLM 依赖。接口依据：[OpenAI Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)、[Z.ai JSON 输出](https://docs.z.ai/guides/capabilities/struct-output)、[DeepSeek API](https://api-docs.deepseek.com/)。Z.ai/DeepSeek 的 Chat 接口使用 JSON Object；适配器把 GraphRAG 要求的 schema 加入提示，并按原 schema 校验响应。
+Use `--model` to override model names. Presets do not promise the latest models; actual access depends on your account. The integration reuses existing GraphRAG/LiteLLM dependencies. API references: [OpenAI Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create), [Z.ai JSON output](https://docs.z.ai/guides/capabilities/struct-output), and [DeepSeek API](https://api-docs.deepseek.com/). Z.ai/DeepSeek Chat endpoints use JSON Object mode. The adapter adds the schema required by GraphRAG to the prompt and validates responses against the original schema.
 
 ```bash
-# OpenAI：聊天与 Embedding 共用 OPENAI_API_KEY
+# OpenAI: Chat and Embedding share OPENAI_API_KEY
 .venv/bin/ir-graphrag init --root workspaces/openai-demo --provider openai
 
-# Z.ai 或 DeepSeek：聊天使用各自密钥；建图默认另用 OpenAI Embedding
+# Z.ai or DeepSeek: Chat uses the provider's own key; graph building uses OpenAI Embedding by default
 .venv/bin/ir-graphrag init --root workspaces/zai-demo --provider zai
 .venv/bin/ir-graphrag init --root workspaces/deepseek-demo --provider deepseek
 
-# DeepSeek 聊天 + 原有本地 OpenClaw Embedding
+# DeepSeek Chat + existing local OpenClaw Embedding
 .venv/bin/ir-graphrag init --root workspaces/deepseek-local \
   --provider deepseek --embedding-provider openclaw
 ```
 
-初始化后，在**对应资料库的 `.env`** 填写所需密钥（格式见仓库 `.env.example`），或在启动 CLI/Streamlit 的进程环境中设置；进程环境优先。初始化不读取、不复制真实密钥，已有 `.env` 内容会保留。服务之间不自动共用密钥。
+After initialization, add the required keys to **the corresponding library's `.env`** (see the repository's `.env.example` for the format), or set them in the process environment that starts CLI/Streamlit. Process environment values take precedence. Initialization neither reads nor copies real keys, and existing `.env` contents are preserved. Keys are not shared automatically between providers.
 
-**财务原文问答只需 Chat 密钥**，无需 OpenAI 或其他 Embedding 密钥；可用 `doctor --chat-only` 检查。建立图谱及向量检索需要 Embedding 服务。本项目将 Z.ai/DeepSeek 作为 Chat 提供商；默认搭配 OpenAI 的 `text-embedding-3-large`（3072 维），也可选择 OpenClaw。[OpenAI Embedding 文档](https://developers.openai.com/api/docs/guides/embeddings)、[Z.ai 接口目录](https://docs.z.ai/llms.txt)。
+**Financial source document Q&A requires only a Chat key**, without an OpenAI or other Embedding key. Check it with `doctor --chat-only`. Graph building and vector retrieval require an Embedding service. This project uses Z.ai/DeepSeek as Chat providers, paired by default with OpenAI's `text-embedding-3-large` (3072 dimensions); OpenClaw is also available. See the [OpenAI Embedding documentation](https://developers.openai.com/api/docs/guides/embeddings) and [Z.ai API directory](https://docs.z.ai/llms.txt).
 
-OpenClaw 的 `--embedding-model` 和界面模型输入填写路由目标（默认 `openai/text-embedding-3-large`）；程序将其放入 `x-openclaw-model` 请求头，请求体仍使用 `openclaw/llm-gpt55`。直接使用 OpenAI 时填写 `text-embedding-3-large`。不指定 `--vector-size` 时使用预设的 3072 维。
+For OpenClaw, `--embedding-model` and the interface's model input specify the routing target (default: `openai/text-embedding-3-large`). The application places it in the `x-openclaw-model` request header while retaining `openclaw/llm-gpt55` in the request body. For direct OpenAI access, use `text-embedding-3-large`. If `--vector-size` is omitted, the preset value of 3072 dimensions is used.
 
-从旧 OpenClaw 配置迁移已有资料库时，更新 `embedding_models.default_embedding_model.call_args.extra_headers.x-openclaw-model` 和 `vector_store.vector_size`，并为 `embed_text.model_instance_name` 使用新的缓存名（例如 `text_embedding_3_large`），避免复用旧模型向量；然后重新建图。原文问答不受影响，Chat 抽取缓存可保留。新建资料库自动按 Embedding 地址、模型和维度区分向量缓存。`doctor` 会显示实际路由目标。
+When migrating an existing library from an older OpenClaw configuration, update `embedding_models.default_embedding_model.call_args.extra_headers.x-openclaw-model` and `vector_store.vector_size`, and give `embed_text.model_instance_name` a new cache name (for example, `text_embedding_3_large`) to avoid reusing vectors from the old model. Then rebuild the graph. Source document Q&A is unaffected, and Chat extraction caches can be retained. New libraries automatically distinguish vector caches by Embedding endpoint, model, and dimensions. `doctor` displays the actual routing target.
 
 ```bash
 .venv/bin/ir-graphrag doctor --root workspaces/deepseek-demo --chat-only
-# 完整检查会调用 Chat 与 Embedding，检查 JSON 和向量维度，产生相应 API 用量
+# A full check calls Chat and Embedding, checks JSON and vector dimensions, and incurs corresponding API usage
 .venv/bin/ir-graphrag doctor --root workspaces/deepseek-demo
 ```
 
-独立覆盖地址、模型与密钥变量：
+Override endpoints, models, and key variables independently:
 
 ```bash
 .venv/bin/ir-graphrag init --root workspaces/custom-api \
@@ -145,40 +134,40 @@ OpenClaw 的 `--embedding-model` 和界面模型输入填写路由目标（默�
   --embedding-api-key-env EMBEDDING_API_KEY --vector-size 1536
 ```
 
-`--api-base` / `--embedding-api-base` 填 API base，不含 `/chat/completions` 或 `/embeddings`。`--vector-size` 是向量库期望维度，不会自动缩减模型输出维度；需与所选模型实际输出一致。已有资料库可编辑 `settings.yaml` 的 `completion_models` / `embedding_models`：密钥使用 `${变量名}`；Z.ai/DeepSeek completion 的 `type` 设为 `ir_json_chat`，`model_provider` 设为 `openai`。配置改变后运行 `doctor`；已有图谱需重建后再查询，财务原文问答无需重建图谱。
+`--api-base` / `--embedding-api-base` take an API base URL without `/chat/completions` or `/embeddings`. `--vector-size` sets the expected dimensions in the vector store; it does not automatically reduce the model's output dimensions and must match the selected model's actual output. For existing libraries, edit `completion_models` / `embedding_models` in `settings.yaml`: reference keys as `${VARIABLE_NAME}`; for Z.ai/DeepSeek completions, set `type` to `ir_json_chat` and `model_provider` to `openai`. Run `doctor` after configuration changes. Rebuild existing graphs before querying them; financial source document Q&A does not require a graph rebuild.
 
-## 财务原文问答
+## Financial Source Document Q&A
 
-以下命令使用调用者设置的环境变量：`WORKSPACE` 为已有资料库路径，`TICKER` 为公司代码，`PERIOD` 为问题中的财务期间，`AS_OF` 为发布日期截止日（`YYYY-MM-DD`）。需要严格财年/财季筛选时，设置 `FISCAL_YEAR` 与 `FISCAL_QUARTER`：
+The following commands use caller-defined environment variables: `WORKSPACE` is an existing library path, `TICKER` is the company ticker, `PERIOD` is the financial period in the question, and `AS_OF` is the publication-date cutoff (`YYYY-MM-DD`). Set `FISCAL_YEAR` and `FISCAL_QUARTER` when strict fiscal-year/fiscal-quarter filters are required:
 
 ```bash
 .venv/bin/ir-graphrag ask --root "$WORKSPACE" \
-  "${TICKER} ${PERIOD} 销售额和上年同期各是多少？请区分季度与累计数并注明来源。" \
+  "What were ${TICKER}'s sales for ${PERIOD} and the comparable prior-year period? Distinguish quarterly from year-to-date figures and cite the sources." \
   --ticker "$TICKER" --as-of "$AS_OF" --fiscal-year "$FISCAL_YEAR" --fiscal-quarter "$FISCAL_QUARTER" \
   --output "$WORKSPACE/answers/answer.json"
 ```
 
-CLI 默认 `--method financial`。首次查询自动建立本地全文索引，**建立此索引不调用模型**；生成回答会调用 Chat。只查证据、不调用模型：
+The CLI defaults to `--method financial`. The first query automatically builds a local full-text index; **building this index does not call a model**. Answer generation calls Chat. To retrieve evidence without calling a model:
 
 ```bash
 .venv/bin/ir-graphrag search --root "$WORKSPACE" \
-  "${TICKER} ${PERIOD} GAAP 与调整后收入" --ticker "$TICKER" --as-of "$AS_OF" \
+  "${TICKER} ${PERIOD} GAAP and adjusted revenue" --ticker "$TICKER" --as-of "$AS_OF" \
   --output "$WORKSPACE/answers/evidence.json"
 ```
 
-原文检索采用显式中英财务词扩展、BM25 和指标短语检索，以 reciprocal-rank fusion 合并结果，优先精确金额表；同问多个指标时为各指标保留候选。长段落携带临近印刷表头，帮助保留金额单位与期间。该方法不是完整的语义检索器；罕见同义词未命中时可以改写指标名称，关系问题使用已建图资料库。
+Source document retrieval uses explicit English/Chinese financial term expansion, BM25, and metric phrase searches, combining results through reciprocal-rank fusion and prioritizing tables with exact amounts. Questions covering several metrics retain candidates for each metric. Long passages include nearby printed table headers to help preserve units and periods. This is not a full semantic retriever. If an uncommon synonym produces no matches, try another metric name; use a library with a completed graph for relationship questions.
 
-**筛选边界：**
+**Filter boundaries:**
 
-- 查询 `--ticker` 可重复；`--as-of` 是资料**发布日期截止日**，未知发布日期会排除。日期输入被标准化后比较，截止日之后的资料不进入模型上下文。
-- `--fiscal-year` / `--fiscal-quarter` 只匹配归档明确提供的字段，**不从公告日推断财季**。大量 SEC/新闻记录缺这两个字段；不确定时不要启用这两个过滤器，在问题里写明财务期间，让回答引用原文表头。
-- `--form` 可重复，按归档表单字段匹配。
-- 未命中只表示当前筛选与关键词下没有匹配证据，不等于公司没有发布该期间的资料。
-- 图谱 local/global/basic/DRIFT 不接受上述查询时过滤，防止用全量社区摘要冒充严格时间隔离。图谱查询需要在导入时确定范围。
+- Query `--ticker` can be repeated. `--as-of` is a **publication-date cutoff**; documents with unknown publication dates are excluded. Dates are normalized before comparison, and documents published after the cutoff do not enter the model context.
+- `--fiscal-year` / `--fiscal-quarter` match only fields explicitly supplied by the archive and **do not infer fiscal quarters from publication dates**. Many SEC/news records lack these fields. When uncertain, leave these filters disabled, state the financial period in the question, and have the answer cite the original table headers.
+- `--form` can be repeated and matches the archive's form field.
+- No matches means only that no evidence matched the current filters and keywords, not that the company did not publish documents for that period.
+- Graph local/global/basic/DRIFT modes do not accept these query-time filters, preventing full-scope community summaries from being presented as strictly time-isolated results. Graph query scope must be established during ingestion.
 
-## 导入新的金融资料库
+## Importing a New Financial Library
 
-将 `WORKSPACE` 设为新资料库路径、`DATASET` 设为本地数据目录、`TICKER` 设为公司代码：
+Set `WORKSPACE` to the new library path, `DATASET` to the local data directory, and `TICKER` to the company ticker:
 
 ```bash
 .venv/bin/ir-graphrag init --root "$WORKSPACE"
@@ -187,22 +176,22 @@ CLI 默认 `--method financial`。首次查询自动建立本地全文索引，*
 .venv/bin/ir-graphrag doctor --root "$WORKSPACE"
 ```
 
-合并不同公司归档时可重复 `--dataset`，让公司代码从各归档元数据读取，不对混合资料统一指定 `--ticker`。
+When combining archives from different companies, repeat `--dataset` and let company tickers be read from each archive's metadata. Do not assign one `--ticker` to mixed-company data.
 
-`financial` 范围选择定期/相关财务申报、业绩材料、电话会、年报、投资者会议和财务发布稿，排除所有权表单、普通产品博客和论文。`prepare` 默认仍为 `--profile all` 以兼容旧命令；界面默认选择 financial。
+The `financial` scope selects periodic/relevant financial filings, earnings materials, calls, annual reports, investor conferences, and financial press releases, excluding ownership forms, general product blogs, and papers. `prepare` still defaults to `--profile all` for compatibility with older commands; the interface defaults to financial.
 
-进一步收窄：
+To narrow the scope further:
 
-- `--category quarterly_results --category annual_report`，或 `--category sec_filings --form 10-K --form 10-Q`；与 financial 范围取交集。
-- `--since "$SINCE" --until "$UNTIL"` 按调用者设置的日期（`YYYY-MM-DD`）筛选，含起止日；未知日期默认排除，`--include-undated` 可保留。不设日期范围时保留无日期补充记录。
-- `--limit-records N` 按归档清单顺序限制整个任务的记录总数，可用于试跑。
-- 普通文档目录也可导入，使用 `--ticker` 明确公司。没有归档元数据时不猜测发布日期或财季；financial 范围对普通文件依赖文件名，名称不规范时用 `--profile all`。
+- Use `--category quarterly_results --category annual_report`, or `--category sec_filings --form 10-K --form 10-Q`. These are intersected with the financial scope.
+- `--since "$SINCE" --until "$UNTIL"` filters by caller-defined dates (`YYYY-MM-DD`), including both endpoints. Unknown dates are excluded by default; use `--include-undated` to retain them. Without a date range, undated supplementary records are retained.
+- `--limit-records N` limits the total number of records for the entire task in archive-manifest order and can be used for trial runs.
+- Ordinary document directories can also be imported; use `--ticker` to specify the company. Publication dates and fiscal quarters are not guessed without archive metadata. For ordinary files, the financial scope relies on filenames; use `--profile all` when names do not follow expected conventions.
 
-新增导入行为：保留 `fiscal_year`、`fiscal_quarter`、`report_year` 和 `report_date`；HTML 表格独立定位为 `table N`，保留跨度表头、行标签、币种及会计负数；发现 `[Truncated]` 的 HTML 时优先使用同目录完整 TXT，并记录回退。
+Updated ingestion behavior preserves `fiscal_year`, `fiscal_quarter`, `report_year`, and `report_date`; locates HTML tables separately as `table N`, retaining spanning headers, row labels, currencies, and accounting negatives; and prefers a complete TXT file in the same directory when HTML contains `[Truncated]`, recording the fallback.
 
-## 原文数值核算
+## Calculations Using Source Values
 
-问答中的自动算术仍是模型输出。需要程序核算时，从已保存回答或 `search` 结果选择两个明确引用的数值，使用界面核算器或 CLI。将 `ANSWER_JSON` 设为自己的答案/检索结果路径、`OPERANDS_JSON` 设为外部操作数 JSON 路径：
+Automatic arithmetic in answers is still model output. For programmatic calculations, select two explicitly cited values from a saved answer or `search` result and use the interface calculator or CLI. Set `ANSWER_JSON` to your answer/search-result path and `OPERANDS_JSON` to an external operands JSON file:
 
 ```bash
 .venv/bin/ir-graphrag calculate \
@@ -211,89 +200,89 @@ CLI 默认 `--method financial`。首次查询自动建立本地全文索引，*
   --output "$WORKSPACE/answers/comparison.json"
 ```
 
-外部操作数 JSON 包含 `current` 与 `previous` 对象，两者都需要以下字段。下面仅说明结构；占位内容必须替换为当前答案中的真实来源编号、完整原文及相应数值标签：
+The external operands JSON contains `current` and `previous` objects, each requiring the following fields. This example illustrates the structure only; replace the placeholders with a real source ID from the current answer, the full source quote, and the corresponding value labels:
 
 ```json
 {
-  "source_id": "答案中的来源编号",
-  "quote": "包含数值的完整原文行",
-  "value": "原文中的完整带符号数字",
+  "source_id": "Source ID from the answer",
+  "quote": "Complete source line containing the value",
+  "value": "Complete signed number from the source",
   "unit": "USD millions",
-  "period": "原文对应的财务期间",
+  "period": "Financial period corresponding to the source",
   "basis": "GAAP",
-  "metric": "原文对应的指标"
+  "metric": "Metric corresponding to the source"
 }
 ```
 
-核算器验证引用实际存在、数值是原文中的完整带符号 token；不能截取数值中的部分数字，也不能裁掉括号或负号把负数变成正数。用 Decimal 归一化 USD、千/百万/十亿美元；每股金额和百分率不能与金额混算。两期指标与会计口径标签必须一致，期间必须不同。
+The calculator validates that the citation exists and that the value is a complete signed token in the source. It does not allow selecting only some digits or stripping parentheses or a minus sign to turn a negative value positive. Decimal normalizes USD amounts in units, thousands, millions, and billions; per-share amounts and percentages cannot be mixed with monetary amounts. Both periods must use matching metric and accounting-basis labels, and the periods must differ.
 
-返回差额、变化率；百分率相减另外返回百分点和基点。前期为零或负数时不给出易误导的增长率。
+The result includes the difference and rate of change; subtracting percentages also returns percentage-point and basis-point differences. When the prior-period value is zero or negative, potentially misleading growth rates are omitted.
 
-**单位、指标、期间和 GAAP 口径由使用者明确指定；程序校验数字与算术，不自动证明这些语义标签正确。** 当前核算器限定 USD、USD per share、percent。
+**The user explicitly specifies units, metrics, periods, and GAAP basis. The program validates numbers and arithmetic; it does not automatically prove these semantic labels are correct.** The calculator currently supports only USD, USD per share, and percent.
 
-## 图谱分析
+## Graph Analysis
 
 ```bash
 .venv/bin/ir-graphrag index --root "$WORKSPACE"
 .venv/bin/ir-graphrag ask --root "$WORKSPACE" \
-  '主要客户、产品与业务风险之间有什么关系？' --method local
+  'What relationships connect the main customers, products, and business risks?' --method local
 ```
 
-| 方法 | 适用问题 | 前提 |
+| Method | Suitable questions | Prerequisites |
 |---|---|---|
-| `financial`（CLI/界面默认） | 精确披露、金额、期间与会计口径 | 已导入文本 |
-| `local` | 公司、客户、产品、风险及关系 | 完成图谱 |
-| `global` | 跨文档主题与整体趋势 | 完成图谱，社区报告 map-reduce |
-| `basic` | 上游向量原文检索，与金融检索比较 | 完成现有索引及向量 |
-| `drift` | 复杂问题的多步探索 | 完成图谱，可能产生较多模型调用 |
+| `financial` (CLI/interface default) | Exact disclosures, amounts, periods, and accounting bases | Imported text |
+| `local` | Companies, customers, products, risks, and relationships | Completed graph |
+| `global` | Cross-document themes and overall trends | Completed graph; community report map-reduce |
+| `basic` | Upstream vector-based source document retrieval for comparison with financial retrieval | Completed index and vectors |
+| `drift` | Multi-step exploration of complex questions | Completed graph; may require many model calls |
 
-全量建图可能运行很久；先选财务范围或小样本。导入报告的 token 数只是字符数除以 4，不是计费估算。上游自定义模型成本记录为零不代表免费。
+A full graph build can take a long time; start with the financial scope or a small sample. Token counts in the ingestion report are simply character counts divided by 4, not billing estimates. An upstream custom-model cost recorded as zero does not mean the model is free.
 
-### 恢复未完成的向量生成
+### Resuming Incomplete Embedding Generation
 
-适用于 GraphRAG 3.2 中图表、社区报告及实体向量均已完成，仅报告或原文向量未完成的工作区；工作区不能已有 `index-ready.json` 完成标记，输入必须与导入报告及已保存文档一致。
+This applies to GraphRAG 3.2 workspaces where graph tables, community reports, and entity vectors are complete, but report or source-text vectors remain unfinished. The workspace must not already have an `index-ready.json` completion marker, and its inputs must match the ingestion report and saved documents.
 
 ```bash
 .venv/bin/python scripts/resume_embeddings.py --root "$WORKSPACE"
 ```
 
-脚本先备份配置、输出目录及默认路径 `logs/indexing-engine.log`，将 `embed_text.batch_max_tokens` 调整为 1,200，并用实际语料检查每条及每批输入是否超过本地网关的 8,192 字符限制；1,200 tokens 本身不保证字符安全。只续跑报告与原文向量，验证向量和保留文件后才写入完成标记。备份仅完整复制配置中的输出目录；请使用默认目录布局，输出目录之外的自定义向量库不包含在该备份中。
+The script first backs up the configuration, output directory, and default log path `logs/indexing-engine.log`. It sets `embed_text.batch_max_tokens` to 1,200 and checks the actual corpus to ensure individual inputs and batches do not exceed the local gateway's 8,192-character limit; 1,200 tokens alone does not guarantee compliance with the character limit. It resumes only report and source-text vectors, writing the completion marker only after validating vectors and preserved files. The backup fully copies only the output directory specified in the configuration. Use the default directory layout; custom vector stores outside the output directory are not included in this backup.
 
-## 引用、质量和运行边界
+## Citations, Quality, and Operational Limits
 
-- 回答 JSON 保留 `answer`、`evidence`、`context`、范围以及 `citation_audit`。`Sources:123` 对应 `[Data: Sources (123)]`。界面可只显示实际引用的证据，并查看原始路径、PDF 页码/表格位置、网页 URL 和片段。
-- 引用审计只核对编号是否存在，不是结论正确性判定。financial 模式拒绝接受含未知引用编号的模型回答；无引用会单独显示。图谱背景 `graph_background` 不能当作具体金额的直接证明。
-- financial 的本地检索索引随语料或元数据变化自动重建。图谱模式在语料/配置/提示词变化后拒绝使用过期索引；修正后重跑 `index` 可复用上游缓存。
-- 支持 PDF、HTML/HTM、TXT/Markdown、DOCX、PPTX、XLSX/XLS、CSV、XML。按归档清单选择正文及附件，排除审计文件、SEC 索引页和重复格式；重复文本保留公司、日期与期间的区别及别名。
-- 无 OCR、图形图表理解、音视频下载或自动转录；复杂表格、图形标签、扫描页仍可能不完整。Excel 读取缓存值，不计算公式；DOCX/PPTX 不解析嵌入图表和备注。旧 `.doc`/`.ppt` 需先转换。
-- 本机工具，默认只监听 `127.0.0.1`；界面要求登录，没有账号间资料隔离或任务队列。登录保护网页界面，CLI 和文件仍按本机权限访问。每个资料库同时只执行一个索引/查询。
-- OpenClaw 实测会改变 `<|>` 标记；通过上游 completion factory 注册的 `ir_openclaw` 仅对图抽取使用 ASCII 传输转义，随后恢复原生格式。请用本项目 CLI 完成 provider 注册。
+- Answer JSON retains `answer`, `evidence`, `context`, scope, and `citation_audit`. `Sources:123` corresponds to `[Data: Sources (123)]`. The interface can display only evidence actually cited and show original paths, PDF page numbers/table locations, web URLs, and excerpts.
+- Citation auditing checks only whether IDs exist; it does not determine whether conclusions are correct. Financial mode rejects model answers containing unknown citation IDs, and missing citations are shown separately. Graph context in `graph_background` cannot serve as direct evidence for specific amounts.
+- The financial local retrieval index rebuilds automatically when the corpus or metadata changes. Graph modes reject stale indexes after changes to the corpus, configuration, or prompts. After making corrections, rerun `index` to reuse upstream caches.
+- Supported formats are PDF, HTML/HTM, TXT/Markdown, DOCX, PPTX, XLSX/XLS, CSV, and XML. Main documents and attachments are selected using archive manifests, excluding audit files, SEC index pages, and duplicate formats. Deduplicated text retains distinctions and aliases for companies, dates, and periods.
+- There is no OCR, visual chart understanding, audio/video downloading, or automatic transcription. Complex tables, chart labels, and scanned pages may remain incomplete. Excel files are read using cached values, without formula calculation; DOCX/PPTX parsing does not include embedded charts or notes. Legacy `.doc`/`.ppt` files must be converted first.
+- This is a local tool that listens only on `127.0.0.1` by default. The interface requires login, without data isolation between accounts or a task queue. Login protects the web interface; CLI and file access still follow local permissions. Each library runs only one indexing/query operation at a time.
+- Observed OpenClaw behavior changes the `<|>` marker. The `ir_openclaw` provider, registered through the upstream completion factory, uses ASCII transport escaping only for graph extraction, then restores the native format. Use this project's CLI to complete provider registration.
 
-## 验证与开发
+## Validation and Development
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ir-graphrag status --root "$WORKSPACE"
 ```
 
-评估案例由调用者提供，不内置公司、财务数值、截止日或答案路径。将 `CASES` 设为外部案例 JSON 文件路径；文件内容为非空数组，每项包含：
+Evaluation cases are supplied by the caller; no companies, financial values, cutoff dates, or answer paths are built in. Set `CASES` to an external cases JSON file. Its contents must be a nonempty array, with each item containing:
 
-- `name`：唯一答案文件名，不含扩展名，仅使用字母、数字、`_`、`-`。
-- `question`：非空问题字符串。
-- `filters`：查询范围对象；可包含 `tickers` / `forms` 字符串数组、`as_of`（`YYYY-MM-DD`）、`fiscal_year`、`fiscal_quarter`。只填写原始资料能够支持的范围。
-- `expected`：预期数值的十进制字符串数组。
-- `units`：要核对的单位标签数组，支持 `million`、`thousand`、`per_share`。
+- `name`: a unique answer filename without an extension, using only letters, digits, `_`, and `-`.
+- `question`: a nonempty question string.
+- `filters`: an object describing the query scope, optionally containing `tickers` / `forms` string arrays, `as_of` (`YYYY-MM-DD`), `fiscal_year`, and `fiscal_quarter`. Specify only scope supported by the source material.
+- `expected`: an array of expected values as decimal strings.
+- `units`: an array of unit labels to check, supporting `million`, `thousand`, and `per_share`.
 
-`expected` 与 `units` 都为空时，检查该范围下是否明确回答证据不足。预期值应由人对照原始披露填写。离线模式读取资料库 `answers/<name>.json`；实时模式调用模型并保存回答。
+When both `expected` and `units` are empty, the evaluation checks whether the answer explicitly reports insufficient evidence within that scope. Expected values should be entered by a person checking the original disclosures. Offline mode reads the library's `answers/<name>.json`; live mode calls the model and saves answers.
 
 ```bash
-# 离线复核已有答案，不调用模型：
+# Recheck existing answers offline without calling a model:
 .venv/bin/python scripts/evaluate_financial.py --root "$WORKSPACE" --cases "$CASES"
-# 用当前检索器和模型重新回答并检查：
+# Generate and check new answers using the current retriever and model:
 .venv/bin/python scripts/evaluate_financial.py --root "$WORKSPACE" --cases "$CASES" \
   --live --output "$WORKSPACE/evaluation.json"
 ```
 
-评估核对配置中的数值及负号、单位标签、查询范围、引用编号、被引用直接证据内的数值和本地源文件存在性。**这是指定案例的功能检查，不是整个语料库的语义财务准确率评测。** 数值出现在证据里也不能自动证明模型选对了行列或会计口径。
+Evaluation checks configured values and minus signs, unit labels, query scope, citation IDs, values in cited direct evidence, and the existence of local source files. **This is a functional check of specified cases, not an assessment of semantic financial accuracy across the entire corpus.** A value appearing in evidence does not automatically prove that the model selected the correct row, column, or accounting basis.
 
-导入、问答、引用与核算的检查方法见 `VALIDATION.md`。
+See `VALIDATION.md` for methods to check ingestion, Q&A, citations, and calculations.
